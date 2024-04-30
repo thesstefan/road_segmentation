@@ -1,0 +1,28 @@
+{
+    "name": "road_segmentation",
+    "build": {
+        "context": "..",
+        "dockerfile": "../Dockerfile",
+        "target": "dev"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "charliermarsh.ruff",
+                "ms-python.python",
+                "ms-python.mypy-type-checker",
+                "tamasfe.even-better-toml",
+                "DavidAnson.vscode-markdownlint",
+                "GitHub.copilot",
+                "ms-azuretools.vscode-docker"
+            ],
+            "settings": {
+                "mypy-type-checker.importStrategy": "fromEnvironment",
+                "mypy-type-checker.preferDaemon": true,
+                "mypy-type-checker.reportingScope": "workspace",
+                "editor.formatOnSave": true,
+                "python.analysis.typeCheckingMode": "strict"
+            }
+        }
+    }
+}
