@@ -36,6 +36,7 @@ parser.add_argument(
     default=True,
 )
 parser.add_argument("--ckpt_save_top_k", type=int, default=1)
+parser.add_argument("--ckpt_save_dir", type=str)
 parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
 parser.add_argument("--resume_checkpoint", type=str, default=None)
 
@@ -109,6 +110,7 @@ def main() -> None:
     )
 
     checkpoint_callback = ModelCheckpoint(
+        dirpath=args.ckpt_save_dir,
         save_top_k=args.ckpt_save_top_k,
         monitor=args.ckpt_monitor,
     )
