@@ -1,4 +1,4 @@
-FROM python:3.12.2-slim AS setup
+FROM python:3.10.14-slim AS setup
 WORKDIR /road_segmentation
 
 FROM setup AS base_req
