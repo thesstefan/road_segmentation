@@ -54,6 +54,8 @@ def split_train_val(
 def main() -> None:
     args = parser.parse_args()
 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     dataset = ETHZDataset.train_dataset(
         Path(f"{args.dataset_dir}/training"),
         transform=segformer_feature_extractor,
@@ -91,7 +93,7 @@ def main() -> None:
             "f1": BinaryF1Score(),
             "jaccard": BinaryJaccardIndex(),
         },
-    )
+    ).to(device)
 
     model = RoadSegformer(
         segformer_ckpt=args.segformer_base,
@@ -126,6 +128,7 @@ def main() -> None:
         callbacks.append(early_stop_callback)
 
     trainer = pl.Trainer(
+        accelerator=str(device),
         max_epochs=args.epochs,
         val_check_interval=len(dataloaders["train"]),
         logger=logger,
