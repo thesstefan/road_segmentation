@@ -21,6 +21,7 @@ from road_segmentation.model.road_segformer import (
 
 parser = argparse.ArgumentParser()
 
+parser.add_argument("--dataset_dir", type=str)
 parser.add_argument("--lr", type=str, default=6e-5)
 parser.add_argument("--epochs", type=int, default=50)
 parser.add_argument("--batch_size", type=int, default=2)
@@ -54,7 +55,7 @@ def main() -> None:
     args = parser.parse_args()
 
     dataset = ETHZDataset.train_dataset(
-        Path("data/training"),
+        Path(f"{args.dataset_dir}/training"),
         transform=segformer_feature_extractor,
     )
     train_dataset, val_dataset = split_train_val(
@@ -62,7 +63,7 @@ def main() -> None:
         args.train_val_split_ratio,
     )
     test_dataset = ETHZDataset.test_dataset(
-        Path("data/test"),
+        Path(f"{args.dataset_dir}/test"),
         transform=segformer_feature_extractor,
     )
 
