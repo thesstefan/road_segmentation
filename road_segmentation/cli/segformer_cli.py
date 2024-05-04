@@ -1,9 +1,14 @@
 import argparse
+import logging
 from pathlib import Path
 
 import lightning.pytorch as pl  # type: ignore[import]
 import torch
-from lightning.pytorch.callbacks import Callback, EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import (
+    Callback,
+    EarlyStopping,
+    ModelCheckpoint,
+)
 from lightning.pytorch.loggers import TensorBoardLogger  # type: ignore[import]
 from torch.utils.data import DataLoader, Subset, random_split
 from torchmetrics.classification import (
@@ -14,37 +19,49 @@ from torchmetrics.classification import (
 from torchmetrics.collections import MetricCollection
 
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
+from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
 from road_segmentation.model.road_segformer import (
     RoadSegformer,
     segformer_feature_extractor,
 )
+from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
+
+logger = logging.getLogger(__name__)
 
 parser = argparse.ArgumentParser()
+subparser = parser.add_subparsers(dest="mode", required=True)
 
-parser.add_argument("--dataset_dir", type=str)
-parser.add_argument("--lr", type=str, default=6e-5)
-parser.add_argument("--epochs", type=int, default=50)
-parser.add_argument("--batch_size", type=int, default=2)
-parser.add_argument("--segformer_base", type=str, default="nvidia/mit-b3")
-parser.add_argument("--metrics_interval", type=int, default=5)
-parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
-parser.add_argument("--tb_logdir", type=str, default="tb_logs")
-parser.add_argument(
+train_parser = subparser.add_parser("train")
+predict_parser = subparser.add_parser("predict")
+
+predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
+predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
+predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
+
+train_parser.add_argument("--dataset_dir", type=str)
+train_parser.add_argument("--lr", type=str, default=6e-5)
+train_parser.add_argument("--epochs", type=int, default=50)
+train_parser.add_argument("--batch_size", type=int, default=2)
+train_parser.add_argument("--segformer_base", type=str, default="nvidia/mit-b3")
+train_parser.add_argument("--metrics_interval", type=int, default=5)
+train_parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
+train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
+train_parser.add_argument(
     "--early_stop",
     action=argparse.BooleanOptionalAction,
     type=bool,
     default=True,
 )
-parser.add_argument("--ckpt_save_top_k", type=int, default=1)
-parser.add_argument("--ckpt_save_dir", type=str)
-parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
-parser.add_argument("--resume_checkpoint", type=str, default=None)
+train_parser.add_argument("--ckpt_save_top_k", type=int, default=1)
+train_parser.add_argument("--ckpt_save_dir", type=str)
+train_parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
+train_parser.add_argument("--resume_checkpoint", type=str, default=None)
 
 
 def split_train_val(
     dataset: ETHZDataset,
     train_ratio: float,
-) -> tuple[Subset[dict[str, torch.Tensor]], Subset[dict[str, torch.Tensor]]]:
+) -> tuple[Subset[SegmentationItem], Subset[SegmentationItem]]:
     train_size = int(train_ratio * len(dataset))
     val_size = len(dataset) - train_size
 
@@ -52,38 +69,77 @@ def split_train_val(
     return train_subset, val_subset
 
 
-def main() -> None:
-    args = parser.parse_args()
+def predict(
+    model_ckpt_path: Path,
+    input_dir: Path,
+    prediction_output_dir: Path,
+    tb_logdir: Path,
+    device: torch.device,
+) -> None:
+    model = RoadSegformer.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
+        checkpoint_path=model_ckpt_path,
+    ).to(device)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    predict_dataset = ETHZDataset.test_dataset(
+        input_dir,
+        transform=segformer_feature_extractor,
+    )
+    dataloader = DataLoader(
+        predict_dataset,
+        batch_size=2,
+        shuffle=False,
+    )
+    logger = TensorBoardLogger(
+        tb_logdir,
+        name="RoadSegformer_ETHZDataset",
+    )
+    predictor = pl.Trainer(
+        accelerator=str(device),
+        logger=logger,
+        callbacks=[OnBatchImageOutputWriter(prediction_output_dir)],
+    )
 
+    predictor.predict(
+        model,
+        dataloaders=dataloader,
+        return_predictions=False,
+    )
+
+
+def train(  # noqa: PLR0913
+    device: torch.device,
+    dataset_dir: Path,
+    lr: float,
+    epochs: int,
+    batch_size: int,
+    segformer_base: str,
+    metrics_interval: int,
+    train_val_split_ratio: float,
+    tb_logdir: Path,
+    early_stop: bool,  # noqa: FBT001
+    ckpt_save_top_k: int,
+    ckpt_save_dir: Path,
+    ckpt_monitor: str,
+    resume_checkpoint: Path | None,
+) -> None:
     dataset = ETHZDataset.train_dataset(
-        Path(f"{args.dataset_dir}/training"),
+        Path(f"{dataset_dir}/training"),
         transform=segformer_feature_extractor,
     )
     train_dataset, val_dataset = split_train_val(
         dataset,
-        args.train_val_split_ratio,
-    )
-    test_dataset = ETHZDataset.test_dataset(
-        Path(f"{args.dataset_dir}/test"),
-        transform=segformer_feature_extractor,
+        train_val_split_ratio,
     )
 
     dataloaders = {
         "train": DataLoader(
             train_dataset,
-            batch_size=args.batch_size,
+            batch_size=batch_size,
             shuffle=True,
         ),
         "val": DataLoader(
             val_dataset,
-            batch_size=args.batch_size,
-            shuffle=False,
-        ),
-        "test": DataLoader(
-            test_dataset,
-            batch_size=args.batch_size,
+            batch_size=batch_size,
             shuffle=False,
         ),
     }
@@ -97,31 +153,31 @@ def main() -> None:
     ).to(device)
 
     model = RoadSegformer(
-        segformer_ckpt=args.segformer_base,
+        segformer_ckpt=segformer_base,
         dataloaders=dataloaders,
         metrics=metrics,
-        lr=args.lr,
-        metrics_interval=args.metrics_interval,
+        lr=lr,
+        metrics_interval=metrics_interval,
     )
 
     logger = TensorBoardLogger(
-        args.tb_logdir,
+        tb_logdir,
         name="RoadSegformer_ETHZDataset",
     )
 
     checkpoint_callback = ModelCheckpoint(
-        dirpath=args.ckpt_save_dir,
-        save_top_k=args.ckpt_save_top_k,
-        monitor=args.ckpt_monitor,
+        dirpath=ckpt_save_dir,
+        save_top_k=ckpt_save_top_k,
+        monitor=ckpt_monitor,
     )
 
     callbacks: list[Callback] = [  # type: ignore[no-any-unimported]
         checkpoint_callback,
     ]
 
-    if args.early_stop:
+    if early_stop:
         early_stop_callback = EarlyStopping(
-            monitor=args.ckpt_monitor,
+            monitor=ckpt_monitor,
             min_delta=0.00,
             patience=10,
             verbose=False,
@@ -131,14 +187,43 @@ def main() -> None:
 
     trainer = pl.Trainer(
         accelerator=str(device),
-        max_epochs=args.epochs,
+        max_epochs=epochs,
         val_check_interval=len(dataloaders["train"]),
         logger=logger,
         callbacks=callbacks,
     )
 
-    trainer.fit(model, ckpt_path=args.resume_checkpoint)
-    trainer.test(model, dataloaders["test"], ckpt_path="best")
+    trainer.fit(model, ckpt_path=resume_checkpoint)
+
+
+def main() -> None:
+    args = parser.parse_args()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if args.mode == "predict":
+        predict(
+            Path(args.model_ckpt_path),
+            Path(args.ethz_input_dir),
+            Path(args.prediction_output_dir),
+            device,
+        )
+    else:
+        train(
+            device,
+            Path(args.dataset_dir),
+            args.lr,
+            args.epochs,
+            args.batch_size,
+            args.segformer_base,
+            args.metrics_interval,
+            args.train_val_split_ratio,
+            Path(args.tb_logdir),
+            args.early_stop,
+            args.ckpt_save_top_k,
+            Path(args.ckpt_save_dir),
+            args.ckpt_monitor,
+            Path(args.resume_checkpoint) if args.resume_checkpoint else None,
+        )
 
 
 if __name__ == "__main__":

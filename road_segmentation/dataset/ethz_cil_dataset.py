@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import Dataset
 from torchvision import io  # type: ignore[import]
 
+from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
 from road_segmentation.utils.transforms import from_color_to_labels
 
 COLOR_1D_TO_LABEL: dict[tuple[int, ...], int] = {
@@ -17,11 +18,11 @@ COLOR_1D_TO_LABEL: dict[tuple[int, ...], int] = {
 
 ImageAndMaskTransform = Callable[
     [torch.Tensor, torch.Tensor | None],
-    tuple[torch.Tensor, torch.Tensor],
+    tuple[torch.Tensor, torch.Tensor | None],
 ]
 
 
-class ETHZDataset(Dataset[dict[str, torch.Tensor]]):
+class ETHZDataset(Dataset[SegmentationItem]):
     image_paths: list[dict[str, Path]]
     transform: ImageAndMaskTransform | None
 
@@ -76,7 +77,10 @@ class ETHZDataset(Dataset[dict[str, torch.Tensor]]):
     def __len__(self) -> int:
         return len(self.image_paths)
 
-    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+    def get_image_path(self, idx: int) -> Path:
+        return self.image_paths[idx]["image_path"]
+
+    def __getitem__(self, idx: int) -> SegmentationItem:
         image = io.read_image(
             str(self.image_paths[idx]["image_path"]),
             mode=io.ImageReadMode.RGB,
@@ -93,4 +97,14 @@ class ETHZDataset(Dataset[dict[str, torch.Tensor]]):
         if self.transform:
             image, mask = self.transform(image, mask)
 
-        return {"image": image} | ({"labels": mask} if mask is not None else {})
+        if mask is None:
+            return SegmentationItem(
+                image=image,
+                image_filename=self.image_paths[idx]["image_path"].name,
+            )
+
+        return SegmentationItem(
+            image=image,
+            image_filename=self.image_paths[idx]["image_path"].name,
+            labels=mask,
+        )
