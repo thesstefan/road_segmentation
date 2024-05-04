@@ -39,7 +39,8 @@ predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
 predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
 
-train_parser.add_argument("--dataset_dir", type=str)
+train_parser.add_argument("--dataset_dir", type=str, required=True)
+train_parser.add_argument("--ckpt_save_dir", type=str, required=True)
 train_parser.add_argument("--lr", type=str, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
 train_parser.add_argument("--batch_size", type=int, default=2)
@@ -53,10 +54,10 @@ train_parser.add_argument(
     default=True,
 )
 train_parser.add_argument("--ckpt_save_top_k", type=int, default=1)
-train_parser.add_argument("--ckpt_save_dir", type=str)
 train_parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
 train_parser.add_argument("--resume_checkpoint", type=str, default=None)
 train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
+train_parser.add_argument("--experiment_name", type=str, default=None)
 
 
 def split_train_val(
@@ -104,6 +105,7 @@ def predict(
 
 def train(  # noqa: PLR0913
     device: torch.device,
+    experiment_name: str | None,
     dataset_dir: Path,
     lr: float,
     epochs: int,
@@ -155,11 +157,13 @@ def train(  # noqa: PLR0913
         metrics=metrics,
         lr=lr,
         metrics_interval=metrics_interval,
+        train_dataset_name="ETHZDataset",
     )
 
     logger = TensorBoardLogger(
         tb_logdir,
-        name="RoadSegformer_ETHZDataset",
+        name=experiment_name or "RoadSegformer_ETHZDataset",
+        default_hp_metric=False,
     )
 
     checkpoint_callback = ModelCheckpoint(
@@ -207,6 +211,7 @@ def main() -> None:
     else:
         train(
             device,
+            args.experiment_name,
             Path(args.dataset_dir),
             args.lr,
             args.epochs,

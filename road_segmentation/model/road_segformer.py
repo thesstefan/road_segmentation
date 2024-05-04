@@ -128,7 +128,7 @@ class RoadSegformer(pl.LightningModule):
             or (batch_idx and batch_idx % self.metrics_interval == 0)
         ):
             metric_results = self.metrics[phase].compute()
-            self.log_dict(metric_results)  # type: ignore[reportUnkonwnMemberType]
+            self.log_dict(metric_results, batch_size=self.batch_size)  # type: ignore[reportUnkonwnMemberType]
 
         return loss
 
