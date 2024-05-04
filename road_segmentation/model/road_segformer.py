@@ -121,7 +121,7 @@ class RoadSegformer(pl.LightningModule):
         phase: str,
     ) -> torch.Tensor:
         loss = self._compute_loss_and_update_metrics(batch, phase)
-        self.log(f"{phase}/loss", value=loss)  # type: ignore[reportUnkonwnMemberType]
+        self.log(f"{phase}/loss", value=loss, batch_size=self.batch_size)  # type: ignore[reportUnkonwnMemberType]
 
         if self.metrics and (
             phase == "test"
