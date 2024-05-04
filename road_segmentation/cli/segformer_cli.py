@@ -37,6 +37,7 @@ predict_parser = subparser.add_parser("predict")
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
 predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
+train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
 
 train_parser.add_argument("--dataset_dir", type=str)
 train_parser.add_argument("--lr", type=str, default=6e-5)
@@ -70,11 +71,11 @@ def split_train_val(
 
 
 def predict(
+    device: torch.device,
     model_ckpt_path: Path,
     input_dir: Path,
     prediction_output_dir: Path,
     tb_logdir: Path,
-    device: torch.device,
 ) -> None:
     model = RoadSegformer.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
@@ -202,10 +203,11 @@ def main() -> None:
 
     if args.mode == "predict":
         predict(
+            device,
             Path(args.model_ckpt_path),
             Path(args.ethz_input_dir),
             Path(args.prediction_output_dir),
-            device,
+            Path(args.tb_logdir),
         )
     else:
         train(
