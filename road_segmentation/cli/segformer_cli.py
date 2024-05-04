@@ -34,10 +34,11 @@ subparser = parser.add_subparsers(dest="mode", required=True)
 train_parser = subparser.add_parser("train")
 predict_parser = subparser.add_parser("predict")
 
+parser.add_argument("--tb_logdir", type=str, default="tb_logs")
+
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
 predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
-train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
 
 train_parser.add_argument("--dataset_dir", type=str)
 train_parser.add_argument("--lr", type=str, default=6e-5)
@@ -46,7 +47,6 @@ train_parser.add_argument("--batch_size", type=int, default=2)
 train_parser.add_argument("--segformer_base", type=str, default="nvidia/mit-b3")
 train_parser.add_argument("--metrics_interval", type=int, default=5)
 train_parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
-train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
 train_parser.add_argument(
     "--early_stop",
     action=argparse.BooleanOptionalAction,
@@ -87,7 +87,7 @@ def predict(
     )
     dataloader = DataLoader(
         predict_dataset,
-        batch_size=2,
+        batch_size=model.batch_size,
         shuffle=False,
     )
     logger = TensorBoardLogger(
@@ -155,6 +155,7 @@ def train(  # noqa: PLR0913
 
     model = RoadSegformer(
         segformer_ckpt=segformer_base,
+        batch_size=batch_size,
         dataloaders=dataloaders,
         metrics=metrics,
         lr=lr,

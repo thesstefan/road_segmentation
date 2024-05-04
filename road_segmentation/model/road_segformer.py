@@ -163,6 +163,10 @@ class RoadSegformer(pl.LightningModule):
 
         return upsample_logits(logits, images.shape[-2:])
 
+    def on_train_start(self) -> None:
+        if self.logger:
+            self.logger.log_hyperparams(self.hparams)  # type: ignore  # noqa: PGH003
+
     def configure_optimizers(self) -> optim.Optimizer:
         return torch.optim.Adam(self.segformer.parameters(), lr=self.lr)
 
