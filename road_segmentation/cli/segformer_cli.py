@@ -28,13 +28,12 @@ from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
 
 logger = logging.getLogger(__name__)
 
+
 parser = argparse.ArgumentParser()
 subparser = parser.add_subparsers(dest="mode", required=True)
 
 train_parser = subparser.add_parser("train")
 predict_parser = subparser.add_parser("predict")
-
-parser.add_argument("--tb_logdir", type=str, default="tb_logs")
 
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
@@ -57,6 +56,7 @@ train_parser.add_argument("--ckpt_save_top_k", type=int, default=1)
 train_parser.add_argument("--ckpt_save_dir", type=str)
 train_parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
 train_parser.add_argument("--resume_checkpoint", type=str, default=None)
+train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
 
 
 def split_train_val(
@@ -75,7 +75,6 @@ def predict(
     model_ckpt_path: Path,
     input_dir: Path,
     prediction_output_dir: Path,
-    tb_logdir: Path,
 ) -> None:
     model = RoadSegformer.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
@@ -90,13 +89,9 @@ def predict(
         batch_size=model.batch_size,
         shuffle=False,
     )
-    logger = TensorBoardLogger(
-        tb_logdir,
-        name="RoadSegformer_ETHZDataset",
-    )
     predictor = pl.Trainer(
         accelerator=str(device),
-        logger=logger,
+        logger=False,
         callbacks=[OnBatchImageOutputWriter(prediction_output_dir)],
     )
 
@@ -208,7 +203,6 @@ def main() -> None:
             Path(args.model_ckpt_path),
             Path(args.ethz_input_dir),
             Path(args.prediction_output_dir),
-            Path(args.tb_logdir),
         )
     else:
         train(
