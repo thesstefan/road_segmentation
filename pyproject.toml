@@ -1,0 +1,56 @@
+[project]
+name = "road_segmentation"
+authors = [
+    { name = "Stefan Stefanache" },
+    { name = "Andreas Frey" },
+    { name = "David Streuli" },
+    { name = "Zweidler Jeffrey" },
+
+]
+description = "Identify roads in satellite images"
+readme = "README.md"
+dynamic = ["dependencies", "optional-dependencies", "version"]
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+optional-dependencies.dev = { file = ["requirements-dev.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project.scripts]
+road_segmentation = "road_segmentation.cli.entrypoint:main"
+
+[tool.ruff]
+line-length = 80
+target-version = "py310"
+select = ["ALL"]
+ignore = [
+    # Make docs not mandatory
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
+
+    # Don't enforce typing annotations for self & cls
+    "ANN101",
+    "ANN102",
+]
+
+[tool.mypy]
+disallow_untyped_defs = true
+disallow_any_unimported = true
+no_implicit_optional = true
+check_untyped_defs = true
+warn_return_any = true
+show_error_codes = true
+exclude = ["build"]
