@@ -16,4 +16,4 @@ RUN pip install .
 
 FROM dev_req as dev
 COPY . .
-RUN pip install ".[dev]"
+RUN pip install -e ".[dev]"
