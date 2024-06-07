@@ -25,5 +25,8 @@
                 "python.analysis.typeCheckingMode": "strict"
             }
         }
-    }
+    },
+    "mounts": [
+        "source=${localWorkspaceFolder}/../,target=/workspaces,type=bind"
+    ]
 }

@@ -24,9 +24,9 @@ from road_segmentation.dataset.deepglobe_cil_dataset import DeepGlobeDataset
 from road_segmentation.dataset.chesa_cil_dataset import ChesaDataset
 
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from road_segmentation.model.road_segformer import (
-    RoadSegformer,
-    segformer_feature_extractor,
+from road_segmentation.model.unet_simple import (
+    UNet_simple,
+    unet_transforms,
 )
 from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
 
@@ -55,10 +55,10 @@ train_parser.add_argument("--chesa_dataset_dir", type=str, default= None)
 train_parser.add_argument("--lr", type=str, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
 train_parser.add_argument("--batch_size", type=int, default=2)
-train_parser.add_argument("--segformer_base", type=str, default="nvidia/mit-b3")
 train_parser.add_argument("--metrics_interval", type=int, default=5)
 train_parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
-train_parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True)
+train_parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True,)
+
 train_parser.add_argument("--ckpt_save_top_k", type=int, default=1)
 train_parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
 train_parser.add_argument("--resume_checkpoint", type=str, default=None)
@@ -67,7 +67,7 @@ train_parser.add_argument("--experiment_name", type=str, default=None)
 
 
 def split_train_val(
-    dataset: ETHZDataset,
+    dataset: Dataset,
     train_ratio: float,
 ) -> tuple[Subset[SegmentationItem], Subset[SegmentationItem]]:
     train_size = int(train_ratio * len(dataset))
@@ -88,7 +88,7 @@ def get_datasets(
     
     ethz_dataset = ETHZDataset.train_dataset(
         Path(f"{Path(ethz_dataset_dir)}/training"),
-        transform=segformer_feature_extractor,
+        transform=unet_transforms,
     )
 
     datasets.append(ethz_dataset)
@@ -96,26 +96,25 @@ def get_datasets(
     if epfl_dataset_dir:
         epfl_dataset = EPFLDataset.train_dataset(
             Path(f"{Path(epfl_dataset_dir)}/training"),
-            transform=segformer_feature_extractor,
+            transform=unet_transforms,
         )
         datasets.append(epfl_dataset)
         
     if deepglobe_dataset_dir:
         deepglobe_dataset = DeepGlobeDataset.train_dataset(
             Path(f"{Path(deepglobe_dataset_dir)}/train"),
-            transform=segformer_feature_extractor,
+            transform=unet_transforms,
         )
         datasets.append(deepglobe_dataset)
 
     if chesa_dataset_dir:
         chesa_dataset = ChesaDataset.train_dataset(
             Path(f"{Path(chesa_dataset_dir)}/data"),
-            transform=segformer_feature_extractor,
+            transform=unet_transforms,
         )
         datasets.append(chesa_dataset)
     
     return ConcatDataset(datasets)
-
 
 
 def predict(
@@ -124,13 +123,13 @@ def predict(
     input_dir: Path,
     prediction_output_dir: Path,
 ) -> None:
-    model = RoadSegformer.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
+    model = UNet.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
     ).to(device)
 
-    predict_dataset = ETHZDataset.test_dataset(
+    predict_dataset = ETHZDataset.test_dataset(     # TODO generalize
         input_dir,
-        transform=segformer_feature_extractor,
+        transform=unet_transforms,
     )
     dataloader = DataLoader(
         predict_dataset,
@@ -160,7 +159,6 @@ def train(  # noqa: PLR0913
     lr: float,
     epochs: int,
     batch_size: int,
-    segformer_base: str,
     metrics_interval: int,
     train_val_split_ratio: float,
     tb_logdir: Path,
@@ -206,8 +204,7 @@ def train(  # noqa: PLR0913
         },
     ).to(device)
 
-    model = RoadSegformer(
-        segformer_ckpt=segformer_base,
+    model = UNet_simple(
         batch_size=batch_size,
         dataloaders=dataloaders,
         metrics=metrics,
@@ -218,7 +215,7 @@ def train(  # noqa: PLR0913
 
     logger = TensorBoardLogger(
         tb_logdir,
-        name=experiment_name or "RoadSegformer_ETHZDataset",
+        name=experiment_name or "Unet_simple",
         default_hp_metric=False,
     )
 
@@ -254,7 +251,6 @@ def train(  # noqa: PLR0913
 
 
 def main() -> None:
-
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -276,7 +272,6 @@ def main() -> None:
             args.lr,
             args.epochs,
             args.batch_size,
-            args.segformer_base,
             args.metrics_interval,
             args.train_val_split_ratio,
             Path(args.tb_logdir),
