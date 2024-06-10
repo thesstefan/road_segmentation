@@ -24,5 +24,3 @@ RUN pip install .
 FROM dev_req as dev
 COPY . .
 RUN pip install -e ".[dev]"
-
-
