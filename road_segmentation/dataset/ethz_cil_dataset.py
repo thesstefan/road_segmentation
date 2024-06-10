@@ -9,18 +9,12 @@ from torch.utils.data import Dataset
 from torchvision import io  # type: ignore[import]
 
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from road_segmentation.utils.transforms import from_color_to_labels
+from road_segmentation.utils.transforms import from_color_to_labels, ImageAndMaskTransform
 
 COLOR_1D_TO_LABEL: dict[tuple[int, ...], int] = {
     (0,): 0,
     (255,): 1,
 }
-
-ImageAndMaskTransform = Callable[
-    [torch.Tensor, torch.Tensor | None],
-    tuple[torch.Tensor, torch.Tensor | None],
-]
-
 
 class ETHZDataset(Dataset[SegmentationItem]):
     image_paths: list[dict[str, Path]]
@@ -85,7 +79,6 @@ class ETHZDataset(Dataset[SegmentationItem]):
             str(self.image_paths[idx]["image_path"]),
             mode=io.ImageReadMode.RGB,
         )
-        image = torch.squeeze(image)
 
         mask = None
         mask_path = self.image_paths[idx].get("mask_path")

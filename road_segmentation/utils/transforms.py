@@ -1,5 +1,10 @@
 import torch
+from collections.abc import Callable
 
+ImageAndMaskTransform = Callable[
+    [torch.Tensor, torch.Tensor | None],
+    tuple[torch.Tensor, torch.Tensor | None],
+]
 
 def from_color_to_labels(
     values: torch.Tensor,

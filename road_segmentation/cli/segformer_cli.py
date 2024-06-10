@@ -10,7 +10,7 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
 )
 from lightning.pytorch.loggers import TensorBoardLogger  # type: ignore[import]
-from torch.utils.data import Dataset, ConcatDataset, DataLoader, Subset, random_split
+from torch.utils.data import DataLoader, Subset, random_split
 from torchmetrics.classification import (
     BinaryAccuracy,
     BinaryF1Score,
@@ -19,15 +19,9 @@ from torchmetrics.classification import (
 from torchmetrics.collections import MetricCollection
 
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
-from road_segmentation.dataset.epfl_cil_dataset import EPFLDataset
-from road_segmentation.dataset.deepglobe_cil_dataset import DeepGlobeDataset
-from road_segmentation.dataset.chesa_cil_dataset import ChesaDataset
-
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from road_segmentation.model.road_segformer import (
-    RoadSegformer,
-    segformer_feature_extractor,
-)
+from road_segmentation.dataset.merged_datasets import get_datasets
+from road_segmentation.model.road_segformer import RoadSegformer, segformer_feature_extractor
 from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
 
 import warnings
@@ -76,48 +70,6 @@ def split_train_val(
     train_subset, val_subset = random_split(dataset, [train_size, val_size])
     return train_subset, val_subset
 
-
-def get_datasets(
-    ethz_dataset_dir: str,
-    epfl_dataset_dir: str | None,
-    deepglobe_dataset_dir: str | None,
-    chesa_dataset_dir: str | None,
-) -> Dataset:
-    
-    datasets = []
-    
-    ethz_dataset = ETHZDataset.train_dataset(
-        Path(f"{Path(ethz_dataset_dir)}/training"),
-        transform=segformer_feature_extractor,
-    )
-
-    datasets.append(ethz_dataset)
-
-    if epfl_dataset_dir:
-        epfl_dataset = EPFLDataset.train_dataset(
-            Path(f"{Path(epfl_dataset_dir)}/training"),
-            transform=segformer_feature_extractor,
-        )
-        datasets.append(epfl_dataset)
-        
-    if deepglobe_dataset_dir:
-        deepglobe_dataset = DeepGlobeDataset.train_dataset(
-            Path(f"{Path(deepglobe_dataset_dir)}/train"),
-            transform=segformer_feature_extractor,
-        )
-        datasets.append(deepglobe_dataset)
-
-    if chesa_dataset_dir:
-        chesa_dataset = ChesaDataset.train_dataset(
-            Path(f"{Path(chesa_dataset_dir)}/data"),
-            transform=segformer_feature_extractor,
-        )
-        datasets.append(chesa_dataset)
-    
-    return ConcatDataset(datasets)
-
-
-
 def predict(
     device: torch.device,
     model_ckpt_path: Path,
@@ -150,6 +102,7 @@ def predict(
     )
 
 
+
 def train(  # noqa: PLR0913
     device: torch.device,
     experiment_name: str | None,
@@ -175,15 +128,13 @@ def train(  # noqa: PLR0913
         epfl_dataset_dir,
         deepglobe_dataset_dir,
         chesa_dataset_dir,
+        segformer_feature_extractor,
     )
     
     train_dataset, val_dataset = split_train_val(
         dataset,
         train_val_split_ratio,
     )
-
-    length_of_train_dataset = len(train_dataset)
-    print("Number of samples in train_dataset:", length_of_train_dataset)
 
     dataloaders = {
         "train": DataLoader(

@@ -1,7 +1,6 @@
 # TODO(thesstefan): Use typing.Self instead when/if upgrading to Python 3.11
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path  # noqa: TCH003
 
 import torch
@@ -9,13 +8,10 @@ from torch.utils.data import Dataset
 from torchvision import io  # type: ignore[import]
 
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from road_segmentation.utils.transforms import from_color_to_labels
+from road_segmentation.utils.transforms import ImageAndMaskTransform
 
 
-ImageAndMaskTransform = Callable[
-    [torch.Tensor, torch.Tensor | None],
-    tuple[torch.Tensor, torch.Tensor | None],
-]
+
 
 class EPFLDataset(Dataset[SegmentationItem]):
     image_paths: list[dict[str, Path]]

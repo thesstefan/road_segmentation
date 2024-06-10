@@ -1,26 +1,17 @@
 # TODO(thesstefan): Use typing.Self instead when/if upgrading to Python 3.11
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path  # noqa: TCH003
 
 import torch
-import cv2
-import numpy as np
 from torch.utils.data import Dataset
 from torchvision import io  # type: ignore[import]
-from torchvision.transforms import ToTensor
 
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from PIL import Image
+from road_segmentation.utils.transforms import ImageAndMaskTransform
 
 
-ImageAndMaskTransform = Callable[
-    [torch.Tensor, torch.Tensor | None],
-    tuple[torch.Tensor, torch.Tensor | None],
-]
-
-class ChesaDataset(Dataset[SegmentationItem]):
+class DeepGlobeDataset(Dataset[SegmentationItem]):
     image_paths: list[dict[str, Path]]
     transform: ImageAndMaskTransform | None
 
@@ -39,16 +30,16 @@ class ChesaDataset(Dataset[SegmentationItem]):
         cls,
         root: Path,
         transform: ImageAndMaskTransform | None = None,
-    ) -> ChesaDataset:
+    ) -> DeepGlobeDataset:
         if not root.exists():
-            error_message = f"Chesa CIL Dataset not found at {root!s}"
+            error_message = f"DeepGlobe CIL Dataset not found at {root!s}"
             raise FileNotFoundError(error_message)
 
         image_paths = []
 
-        for image_file in root.glob("*_image.tif"):
+        for image_file in root.glob("*_sat.jpg"):
             # Construct the mask filename by replacing '_sat.jpg' with '_mask.png'
-            mask_filename = image_file.name.replace("_image.tif", "_mask.tif")
+            mask_filename = image_file.name.replace("_sat.jpg", "_mask.png")
             mask_path = root / mask_filename
             
             # Check if the corresponding mask file exists
@@ -71,21 +62,18 @@ class ChesaDataset(Dataset[SegmentationItem]):
         return self.image_paths[idx]["image_path"]
 
     def __getitem__(self, idx: int) -> SegmentationItem:
-        image = Image.open(self.image_paths[idx]["image_path"])
-        image = image.convert('RGB')
-        image = np.array(image)
-        image = torch.from_numpy(image)
-        image = image.permute(2, 0, 1)
+        image = io.read_image(
+            str(self.image_paths[idx]["image_path"]),
+            mode=io.ImageReadMode.RGB,
+        )
+        image = torch.squeeze(image)
 
-
-        mask = Image.open(self.image_paths[idx]["mask_path"])
-        mask = np.array(mask)
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        
-        mask = mask > 8
-        mask = torch.from_numpy(mask)
+        mask = io.read_image(
+            str(self.image_paths[idx]["mask_path"]),
+            mode=io.ImageReadMode.GRAY,
+        )
+        mask = mask == 255
+        mask = torch.squeeze(mask)
         mask = mask.int()
         
         if self.transform:

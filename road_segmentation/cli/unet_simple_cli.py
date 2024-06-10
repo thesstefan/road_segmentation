@@ -10,7 +10,7 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
 )
 from lightning.pytorch.loggers import TensorBoardLogger  # type: ignore[import]
-from torch.utils.data import Dataset, ConcatDataset, DataLoader, Subset, random_split
+from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from torchmetrics.classification import (
     BinaryAccuracy,
     BinaryF1Score,
@@ -19,15 +19,9 @@ from torchmetrics.classification import (
 from torchmetrics.collections import MetricCollection
 
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
-from road_segmentation.dataset.epfl_cil_dataset import EPFLDataset
-from road_segmentation.dataset.deepglobe_cil_dataset import DeepGlobeDataset
-from road_segmentation.dataset.chesa_cil_dataset import ChesaDataset
-
+from road_segmentation.dataset.merged_datasets import get_datasets
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from road_segmentation.model.unet_simple import (
-    UNet_simple,
-    unet_transforms,
-)
+from road_segmentation.model.unet_simple import UNetSimple, unet_transforms
 from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
 
 import warnings
@@ -77,53 +71,13 @@ def split_train_val(
     return train_subset, val_subset
 
 
-def get_datasets(
-    ethz_dataset_dir: str,
-    epfl_dataset_dir: str | None,
-    deepglobe_dataset_dir: str | None,
-    chesa_dataset_dir: str | None,
-) -> Dataset:
-    
-    datasets = []
-    
-    ethz_dataset = ETHZDataset.train_dataset(
-        Path(f"{Path(ethz_dataset_dir)}/training"),
-        transform=unet_transforms,
-    )
-
-    datasets.append(ethz_dataset)
-
-    if epfl_dataset_dir:
-        epfl_dataset = EPFLDataset.train_dataset(
-            Path(f"{Path(epfl_dataset_dir)}/training"),
-            transform=unet_transforms,
-        )
-        datasets.append(epfl_dataset)
-        
-    if deepglobe_dataset_dir:
-        deepglobe_dataset = DeepGlobeDataset.train_dataset(
-            Path(f"{Path(deepglobe_dataset_dir)}/train"),
-            transform=unet_transforms,
-        )
-        datasets.append(deepglobe_dataset)
-
-    if chesa_dataset_dir:
-        chesa_dataset = ChesaDataset.train_dataset(
-            Path(f"{Path(chesa_dataset_dir)}/data"),
-            transform=unet_transforms,
-        )
-        datasets.append(chesa_dataset)
-    
-    return ConcatDataset(datasets)
-
-
 def predict(
     device: torch.device,
     model_ckpt_path: Path,
     input_dir: Path,
     prediction_output_dir: Path,
 ) -> None:
-    model = UNet.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
+    model = UNetSimple.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
     ).to(device)
 
@@ -173,15 +127,13 @@ def train(  # noqa: PLR0913
         epfl_dataset_dir,
         deepglobe_dataset_dir,
         chesa_dataset_dir,
+        unet_transforms
     )
     
     train_dataset, val_dataset = split_train_val(
         dataset,
         train_val_split_ratio,
     )
-
-    length_of_train_dataset = len(train_dataset)
-    print("Number of samples in train_dataset:", length_of_train_dataset)
 
     dataloaders = {
         "train": DataLoader(
@@ -204,7 +156,7 @@ def train(  # noqa: PLR0913
         },
     ).to(device)
 
-    model = UNet_simple(
+    model = UNetSimple(
         batch_size=batch_size,
         dataloaders=dataloaders,
         metrics=metrics,
@@ -215,7 +167,7 @@ def train(  # noqa: PLR0913
 
     logger = TensorBoardLogger(
         tb_logdir,
-        name=experiment_name or "Unet_simple",
+        name=experiment_name or "UNetSimple",
         default_hp_metric=False,
     )
 

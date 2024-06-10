@@ -4,55 +4,11 @@ import cv2
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torchmetrics.collections import MetricCollection
-from transformers import (  # type: ignore[import]
-    SegformerForSemanticSegmentation,
-    SegformerImageProcessor,
-)
 from torchvision.transforms.functional import resize, to_tensor, normalize
 from torchvision.transforms import InterpolationMode
 
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-
-class Block(nn.Module):
-    # a repeating structure composed of two convolutional layers with batch normalization and ReLU activations
-    def __init__(self, in_ch, out_ch):
-        super().__init__()
-        self.block = nn.Sequential(nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=3, padding=1),
-                                   nn.ReLU(),
-                                   nn.BatchNorm2d(out_ch),
-                                   nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=3, padding=1),
-                                   nn.ReLU())
-
-    def forward(self, x):
-        return self.block(x)
-
-
-class UNet(nn.Module):
-    # UNet-like architecture for single class semantic segmentation.
-    def __init__(self, chs=(3,64,128,256,512,1024)):
-        super().__init__()
-        enc_chs = chs  # number of channels in the encoder
-        dec_chs = chs[::-1][:-1]  # number of channels in the decoder
-        self.enc_blocks = nn.ModuleList([Block(in_ch, out_ch) for in_ch, out_ch in zip(enc_chs[:-1], enc_chs[1:])])  # encoder blocks
-        self.pool = nn.MaxPool2d(2)  # pooling layer (can be reused as it will not be trained)
-        self.upconvs = nn.ModuleList([nn.ConvTranspose2d(in_ch, out_ch, 2, 2) for in_ch, out_ch in zip(dec_chs[:-1], dec_chs[1:])])  # deconvolution
-        self.dec_blocks = nn.ModuleList([Block(in_ch, out_ch) for in_ch, out_ch in zip(dec_chs[:-1], dec_chs[1:])])  # decoder blocks
-        self.head = nn.Sequential(nn.Conv2d(dec_chs[-1], 1, 1), nn.Sigmoid()) # 1x1 convolution for producing the output
-
-    def forward(self, x):
-        # encode
-        enc_features = []
-        for block in self.enc_blocks[:-1]:
-            x = block(x)  # pass through the block
-            enc_features.append(x)  # save features for skip connections
-            x = self.pool(x)  # decrease resolution
-        x = self.enc_blocks[-1](x)
-        # decode
-        for block, upconv, feature in zip(self.dec_blocks, self.upconvs, enc_features[::-1]):
-            x = upconv(x)  # increase resolution
-            x = torch.cat([x, feature], dim=1)  # concatenate skip features
-            x = block(x)  # pass through the block
-        return self.head(x)  # reduce to 1 channel
+from road_segmentation.model.impl.prep_session_unet import UNet
 
 
 def unet_transforms(
@@ -61,24 +17,35 @@ def unet_transforms(
 ) -> tuple[torch.Tensor, torch.Tensor | None]:
     image = image.float()
     labels = labels.float()
-    image_np = image.numpy().transpose(1, 2, 0)  # Assuming image is CxHxW, convert to HxWxC for OpenCV
+    image_np = image.numpy().transpose(
+        1, 2, 0
+    )  # Assuming image is CxHxW, convert to HxWxC for OpenCV
+
+    # # Apply CLAHE to each channel of the RGB image
+    clahe = cv2.createCLAHE(tileGridSize=(4, 4))
+    image_np[:, :, 0] = clahe.apply(
+        (image_np[:, :, 0]).astype("uint8")
+    )  # Apply on R channel
+    image_np[:, :, 1] = clahe.apply(
+        (image_np[:, :, 1]).astype("uint8")
+    )  # Apply on G channel
+    image_np[:, :, 2] = clahe.apply(
+        (image_np[:, :, 2]).astype("uint8")
+    )  # Apply on B channel
 
     # Resize the image and labels to 384x384
     image_np = cv2.resize(image_np, (384, 384), interpolation=cv2.INTER_AREA)
     if labels is not None:
         labels = labels.unsqueeze(0)  # Add channel dimension if missing
-        labels = resize(labels, size=(384, 384), interpolation=InterpolationMode.NEAREST)
-        # labels = labels.squeeze(1)  # Remove channel dimension after resizing
-
-    # Apply CLAHE to each channel of the RGB image
-    clahe = cv2.createCLAHE(tileGridSize=(16, 16))
-    image_np[:, :, 0] = clahe.apply((image_np[:, :, 0] * 255).astype('uint8'))  # Apply on R channel
-    image_np[:, :, 1] = clahe.apply((image_np[:, :, 1] * 255).astype('uint8'))  # Apply on G channel
-    image_np[:, :, 2] = clahe.apply((image_np[:, :, 2] * 255).astype('uint8'))  # Apply on B channel
+        labels = resize(
+            labels, size=(384, 384), interpolation=InterpolationMode.NEAREST
+        )
 
     # Convert back to tensor and normalize
     image_tensor = to_tensor(image_np / 255.0)  # Normalize to 0-1 range
-    image_tensor = normalize(image_tensor, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    image_tensor = normalize(
+        image_tensor, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+    )
 
     return image_tensor, labels
 
@@ -91,11 +58,11 @@ def upsample_logits(logits: torch.Tensor, size: torch.Size) -> torch.Tensor:
         align_corners=False,
     )
 
-    return upsampled_logits.argmax(dim=1)  # type: ignore[reportUnkonwnMemberType]
+    # type: ignore[reportUnkonwnMemberType]
+    return upsampled_logits.argmax(dim=1)
 
 
-
-class UNet_simple(pl.LightningModule):
+class UNetSimple(pl.LightningModule):
     unet: nn.Module  # type: ignore[no-any-unimported]
 
     dataloaders: dict[str, DataLoader[SegmentationItem]]
@@ -150,8 +117,6 @@ class UNet_simple(pl.LightningModule):
         logits = self.unet(images)
         loss = nn.BCELoss()(logits, labels)
 
-        # predicted = upsample_logits(logits, labels.shape[-2:])   # Maybe not needed for UNet?
-
         if self.metrics:
             self.metrics[phase].update(logits, labels)
 
@@ -164,14 +129,16 @@ class UNet_simple(pl.LightningModule):
         phase: str,
     ) -> torch.Tensor:
         loss = self._compute_loss_and_update_metrics(batch, phase)
-        self.log(f"{phase}/loss", value=loss, batch_size=self.batch_size)  # type: ignore[reportUnkonwnMemberType]
+        # type: ignore[reportUnkonwnMemberType]
+        self.log(f"{phase}/loss", value=loss, batch_size=self.batch_size)
 
         if self.metrics and (
-            phase == "test"
-            or (batch_idx and batch_idx % self.metrics_interval == 0)
+            phase == "test" or (batch_idx and batch_idx %
+                                self.metrics_interval == 0)
         ):
             metric_results = self.metrics[phase].compute()
-            self.log_dict(metric_results, batch_size=self.batch_size)  # type: ignore[reportUnkonwnMemberType]
+            # type: ignore[reportUnkonwnMemberType]
+            self.log_dict(metric_results, batch_size=self.batch_size)
 
         return loss
 
