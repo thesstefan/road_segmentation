@@ -163,3 +163,6 @@ data/
 tb_logs/
 *.ckpt
 lightning_logs/
+
+# Mac stuff
+.DS_Store
