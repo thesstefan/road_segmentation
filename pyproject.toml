@@ -26,6 +26,8 @@ where = ["."]
 [project.scripts]
 road_segmentation = "road_segmentation.cli.entrypoint:main"
 road_segformer = "road_segmentation.cli.segformer_cli:main"
+unet_simple = "road_segmentation.cli.unet_simple_cli:main"
+
 
 [tool.ruff]
 line-length = 80

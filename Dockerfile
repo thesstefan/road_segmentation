@@ -4,9 +4,16 @@ WORKDIR /road_segmentation
 FROM setup AS base_req
 COPY requirements.txt requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
+# Include additional system libraries
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0  # Added to provide libgthread
 
 FROM base_req as dev_req
-RUN apt-get update && apt-get install -y git
+RUN apt-get update && apt-get install -y \
+    git \
+    libgl1-mesa-glx \
+    libglib2.0-0  # Ensure all GUI dependencies are covered
 COPY requirements-dev.txt requirements-dev.txt
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
