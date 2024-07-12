@@ -38,7 +38,7 @@ predict_parser = subparser.add_parser("predict")
 
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 train_parser.add_argument("--dataset_dir", type=str, required=True)
-train_parser.add_argument("--lr", type=str, default=6e-5)
+train_parser.add_argument("--lr", type=float, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
 train_parser.add_argument("--batch_size", type=int, default=2)
 train_parser.add_argument("--ae_base", type=str, default=None)

@@ -61,7 +61,7 @@ train_parser.add_argument("--epfl_dataset_dir", type=str, default=None)
 train_parser.add_argument("--deepglobe_dataset_dir", type=str, default=None)
 train_parser.add_argument("--chesa_dataset_dir", type=str, default=None)
 
-train_parser.add_argument("--lr", type=str, default=6e-5)
+train_parser.add_argument("--lr", type=float, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
 train_parser.add_argument("--batch_size", type=int, default=2)
 train_parser.add_argument("--segformer_base", type=str, default="nvidia/mit-b3")
@@ -268,3 +268,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    
