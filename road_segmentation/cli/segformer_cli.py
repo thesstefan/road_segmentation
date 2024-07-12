@@ -9,6 +9,7 @@ from lightning.pytorch.callbacks import (
     EarlyStopping,
     ModelCheckpoint,
 )
+
 from lightning.pytorch.loggers import TensorBoardLogger  # type: ignore[import]
 from torch.utils.data import DataLoader, Subset, random_split
 from torchmetrics.classification import (
@@ -17,14 +18,22 @@ from torchmetrics.classification import (
     BinaryJaccardIndex,
 )
 from torchmetrics.collections import MetricCollection
+from torchvision.transforms.functional import (  # type: ignore[import]
+    to_pil_image,  # type: ignore[reportUnkonwnVariableType]
+)
 
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
 from road_segmentation.dataset.merged_datasets import get_datasets
-from road_segmentation.model.road_segformer import RoadSegformer, segformer_feature_extractor
+from road_segmentation.model.road_segformer import (
+    RoadSegformer,
+    segformer_feature_extractor,
+)
 from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
 
 import warnings
+import os
+
 warnings.filterwarnings("ignore")
 
 logger = logging.getLogger(__name__)
@@ -35,16 +44,22 @@ subparser = parser.add_subparsers(dest="mode", required=True)
 
 train_parser = subparser.add_parser("train")
 predict_parser = subparser.add_parser("predict")
+imputation_dataset_parser = subparser.add_parser("imputation_dataset")
 
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
 predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
+
+imputation_dataset_parser.add_argument("--model_ckpt_path", type=str, required=True)
+imputation_dataset_parser.add_argument("--dataset_dir", type=str, required=True)
+imputation_dataset_parser.add_argument("--output_dir", type=str, required=True)
+
 train_parser.add_argument("--ckpt_save_dir", type=str, required=True)
 
 train_parser.add_argument("--dataset_dir", type=str, required=True)
-train_parser.add_argument("--epfl_dataset_dir", type=str, default= None)
-train_parser.add_argument("--deepglobe_dataset_dir", type=str, default= None)
-train_parser.add_argument("--chesa_dataset_dir", type=str, default= None)
+train_parser.add_argument("--epfl_dataset_dir", type=str, default=None)
+train_parser.add_argument("--deepglobe_dataset_dir", type=str, default=None)
+train_parser.add_argument("--chesa_dataset_dir", type=str, default=None)
 
 train_parser.add_argument("--lr", type=str, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
@@ -52,7 +67,9 @@ train_parser.add_argument("--batch_size", type=int, default=2)
 train_parser.add_argument("--segformer_base", type=str, default="nvidia/mit-b3")
 train_parser.add_argument("--metrics_interval", type=int, default=5)
 train_parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
-train_parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True)
+train_parser.add_argument(
+    "--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True
+)
 train_parser.add_argument("--ckpt_save_top_k", type=int, default=1)
 train_parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
 train_parser.add_argument("--resume_checkpoint", type=str, default=None)
@@ -69,6 +86,7 @@ def split_train_val(
 
     train_subset, val_subset = random_split(dataset, [train_size, val_size])
     return train_subset, val_subset
+
 
 def predict(
     device: torch.device,
@@ -102,7 +120,6 @@ def predict(
     )
 
 
-
 def train(  # noqa: PLR0913
     device: torch.device,
     experiment_name: str | None,
@@ -130,7 +147,7 @@ def train(  # noqa: PLR0913
         chesa_dataset_dir,
         segformer_feature_extractor,
     )
-    
+
     train_dataset, val_dataset = split_train_val(
         dataset,
         train_val_split_ratio,
@@ -215,6 +232,16 @@ def main() -> None:
             Path(args.model_ckpt_path),
             Path(args.ethz_input_dir),
             Path(args.prediction_output_dir),
+        )
+    elif args.mode == "imputation_dataset":
+        create_imputation_dataset(
+            Path(args.dataset_dir),
+            args.model_ckpt_path,
+            Path(args.prediction_output_dir),
+            device,
+            args.epfl_dataset_dir,
+            args.deepglobe_dataset_dir,
+            args.chesa_dataset_dir,
         )
     else:
         train(
