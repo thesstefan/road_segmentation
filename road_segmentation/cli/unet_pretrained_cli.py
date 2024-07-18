@@ -10,7 +10,7 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
 )
 from lightning.pytorch.loggers import TensorBoardLogger  # type: ignore[import]
-from torch.utils.data import DataLoader, Subset, random_split
+from torch.utils.data import Dataset, DataLoader, Subset, random_split
 from torchmetrics.classification import (
     BinaryAccuracy,
     BinaryF1Score,
@@ -19,9 +19,9 @@ from torchmetrics.classification import (
 from torchmetrics.collections import MetricCollection
 
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
-from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
 from road_segmentation.dataset.merged_datasets import get_datasets
-from road_segmentation.model.road_segformer import RoadSegformer, segformer_feature_extractor
+from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
+from road_segmentation.model.unet_pretrained import UNetTrained, unet_transforms
 from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
 
 import warnings
@@ -50,10 +50,10 @@ train_parser.add_argument("--mass_dataset_dir", type=str, default= None)
 train_parser.add_argument("--lr", type=str, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
 train_parser.add_argument("--batch_size", type=int, default=2)
-train_parser.add_argument("--segformer_base", type=str, default="nvidia/mit-b3")
 train_parser.add_argument("--metrics_interval", type=int, default=5)
 train_parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
-train_parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True)
+train_parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True,)
+
 train_parser.add_argument("--ckpt_save_top_k", type=int, default=1)
 train_parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
 train_parser.add_argument("--resume_checkpoint", type=str, default=None)
@@ -62,7 +62,7 @@ train_parser.add_argument("--experiment_name", type=str, default=None)
 
 
 def split_train_val(
-    dataset: ETHZDataset,
+    dataset: Dataset,
     train_ratio: float,
 ) -> tuple[Subset[SegmentationItem], Subset[SegmentationItem]]:
     train_size = int(train_ratio * len(dataset))
@@ -71,19 +71,20 @@ def split_train_val(
     train_subset, val_subset = random_split(dataset, [train_size, val_size])
     return train_subset, val_subset
 
+
 def predict(
     device: torch.device,
     model_ckpt_path: Path,
     input_dir: Path,
     prediction_output_dir: Path,
 ) -> None:
-    model = RoadSegformer.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
+    model = UNetTrained.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
     ).to(device)
 
     predict_dataset = ETHZDataset.test_dataset(
         input_dir,
-        transform=segformer_feature_extractor,
+        transform=unet_transforms,
     )
     dataloader = DataLoader(
         predict_dataset,
@@ -102,8 +103,6 @@ def predict(
         return_predictions=False,
     )
 
-
-
 def train(  # noqa: PLR0913
     device: torch.device,
     experiment_name: str | None,
@@ -115,7 +114,6 @@ def train(  # noqa: PLR0913
     lr: float,
     epochs: int,
     batch_size: int,
-    segformer_base: str,
     metrics_interval: int,
     train_val_split_ratio: float,
     tb_logdir: Path,
@@ -131,7 +129,7 @@ def train(  # noqa: PLR0913
         deepglobe_dataset_dir,
         chesa_dataset_dir,
         mass_dataset_dir,
-        segformer_feature_extractor,
+        unet_transforms
     )
     
     train_dataset, val_dataset = split_train_val(
@@ -160,8 +158,7 @@ def train(  # noqa: PLR0913
         },
     ).to(device)
 
-    model = RoadSegformer(
-        segformer_ckpt=segformer_base,
+    model = UNetTrained(
         batch_size=batch_size,
         dataloaders=dataloaders,
         metrics=metrics,
@@ -172,7 +169,7 @@ def train(  # noqa: PLR0913
 
     logger = TensorBoardLogger(
         tb_logdir,
-        name=experiment_name or "RoadSegformer_ETHZDataset",
+        name=experiment_name or "UNetTrained",
         default_hp_metric=False,
     )
 
@@ -208,7 +205,6 @@ def train(  # noqa: PLR0913
 
 
 def main() -> None:
-
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -231,7 +227,6 @@ def main() -> None:
             args.lr,
             args.epochs,
             args.batch_size,
-            args.segformer_base,
             args.metrics_interval,
             args.train_val_split_ratio,
             Path(args.tb_logdir),

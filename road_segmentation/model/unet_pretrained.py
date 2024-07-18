@@ -8,29 +8,8 @@ from torchvision.transforms.functional import resize, normalize
 from torchvision.transforms import InterpolationMode, ToTensor
 
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from road_segmentation.model.impl.prep_session_unet import UNet
-
-
-def unet_transforms(
-    image: torch.Tensor,
-    labels: torch.Tensor | None,
-) -> tuple[torch.Tensor, torch.Tensor | None]:
-    image = image.float()
-    image = image / 255.0  # Normalize to 0-1 range
-    image = normalize(
-        image, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-    )
-
-    # Resize the image and labels to 384x384
-    image = resize(image, size= (384,384), interpolation=InterpolationMode.BICUBIC)
-    if labels is not None:
-        labels = labels.float()
-        labels = resize(
-            labels, size=(384, 384), interpolation=InterpolationMode.NEAREST
-        )
-
-    return image, labels
-
+import segmentation_models_pytorch as smp
+from segmentation_models_pytorch.encoders import get_preprocessing_fn
 
 def upsample_logits(logits: torch.Tensor, size: torch.Size) -> torch.Tensor:
     upsampled_logits: torch.Tensor = nn.functional.interpolate(  # type: ignore[reportUnknownMemberType]
@@ -44,7 +23,29 @@ def upsample_logits(logits: torch.Tensor, size: torch.Size) -> torch.Tensor:
     return upsampled_logits.argmax(dim=1)
 
 
-class UNetSimple(pl.LightningModule):
+def unet_transforms(
+    image: torch.Tensor,
+    labels: torch.Tensor | None,
+) -> tuple[torch.Tensor, torch.Tensor | None]:
+
+    # image = image.float()
+    transforms = get_preprocessing_fn('efficientnet-b4', pretrained='imagenet')
+    image = transforms(image.permute(1, 2, 0))
+    image = image.permute(2, 0, 1)
+
+    # Resize the image and labels to 384x380
+    image = resize(image, size= (384, 384), interpolation=InterpolationMode.BICUBIC)
+    if labels is not None:
+        # labels = labels.float()
+        labels = labels.unsqueeze(0)  # Add channel dimension if missing
+        labels = resize(
+            labels, size=(384, 384), interpolation=InterpolationMode.NEAREST
+        )
+
+    return image.double(), labels.double()
+
+
+class UNetTrained(pl.LightningModule):
     unet: nn.Module  # type: ignore[no-any-unimported]
 
     dataloaders: dict[str, DataLoader[SegmentationItem]]
@@ -68,7 +69,12 @@ class UNetSimple(pl.LightningModule):
         super().__init__()
 
         self.batch_size = batch_size
-        self.unet = UNet()
+        self.unet = smp.Unet(
+            encoder_name="efficientnet-b4",        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
+            encoder_weights="imagenet",     # use `imagenet` pre-trained weights for encoder initialization
+            in_channels=3,                  # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+            classes=1,                      # model output channels (number of classes in your dataset)
+        ).double()
         self.dataloaders = dataloaders or {}
         self.metrics = (
             {
@@ -95,9 +101,8 @@ class UNetSimple(pl.LightningModule):
         phase: str,
     ) -> torch.Tensor:
         images, labels = batch["image"], batch["labels"]
-
         logits = self.unet(images)
-        loss = nn.BCELoss()(logits, labels)
+        loss = nn.BCEWithLogitsLoss()(logits, labels)
 
         if self.metrics:
             self.metrics[phase].update(logits, labels)

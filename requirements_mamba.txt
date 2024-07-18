@@ -8,3 +8,5 @@ lightning==2.2.4
 opencv-python==4.9.0.80
 dynamic-network-architectures
 segmentation-models-pytorch
+causal-conv1d
+mamba-ssm

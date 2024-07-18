@@ -33,7 +33,7 @@ class EPFLDataset(Dataset[SegmentationItem]):
         transform: ImageAndMaskTransform | None = None,
     ) -> EPFLDataset:
         if not root.exists():
-            error_message = f"EPFL CIL Dataset not found at {root!s}"
+            error_message = f"EPFL Dataset not found at {root!s}"
             raise FileNotFoundError(error_message)
 
         image_paths = [
@@ -42,6 +42,7 @@ class EPFLDataset(Dataset[SegmentationItem]):
                 "mask_path": root / "groundtruth" / image_path.name,
             }
             for image_path in (root / "images").iterdir()
+            if image_path.suffix == ".png"
         ]
 
         return cls(image_paths, transform=transform)
@@ -65,7 +66,6 @@ class EPFLDataset(Dataset[SegmentationItem]):
             mode=io.ImageReadMode.GRAY,
         )
         mask = mask > 200
-        mask = torch.squeeze(mask)
         mask = mask.int()
         
         if self.transform:
