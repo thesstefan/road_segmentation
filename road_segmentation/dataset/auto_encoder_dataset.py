@@ -3,12 +3,17 @@ from torch.utils.data import Dataset
 from pathlib import Path  # noqa: TCH003
 from torchvision import io  # type: ignore[import]
 
-from road_segmentation.utils.transforms import ImageAndMaskTransform, from_color_to_labels
+from road_segmentation.utils.transforms import (
+    ImageAndMaskTransform,
+    from_color_to_labels,
+)
+from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
 
 COLOR_1D_TO_LABEL: dict[tuple[int, ...], int] = {
     (0,): 0,
     (255,): 1,
 }
+
 
 class AEDataset(Dataset):
 
@@ -43,26 +48,60 @@ class AEDataset(Dataset):
 
         return cls(segments_paths, transform)
 
+    @classmethod
+    def test_dataset(
+        cls,
+        root: Path,
+        transform: ImageAndMaskTransform | None = None,
+    ) -> Dataset:
+        if not root.exists():
+            error_message = f"AEDataset not found at {root!s}"
+            raise FileNotFoundError(error_message)
+
+        segments_paths = [
+            {
+                "segment_path": segment_path,
+            }
+            for segment_path in (root / "segments").iterdir()
+        ]
+
+        return cls(segments_paths, transform)
+
     def __len__(self) -> int:
         return len(self.segments_paths)
 
     def get_image_path(self, idx: int) -> Path:
         return self.segments_paths[idx]["segment_path"]
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor | None]:
         image = io.read_image(
             str(self.segments_paths[idx]["segment_path"]),
             mode=io.ImageReadMode.GRAY,
         )
         image = torch.squeeze(image)
+        mask = None
+        mask_path = self.segments_paths[idx].get("mask_path")
 
-        mask = io.read_image(
-            str(self.segments_paths[idx]["mask_path"]),
-            mode=io.ImageReadMode.GRAY,
-        )
-        mask = torch.squeeze(mask)
-        mask = from_color_to_labels(mask, COLOR_1D_TO_LABEL)
-        mask = mask.float()
+        if mask_path:
+            mask = io.read_image(
+                str(self.segments_paths[idx]["mask_path"]),
+                mode=io.ImageReadMode.GRAY,
+            )
+            mask = torch.squeeze(mask)
+            mask = from_color_to_labels(mask, COLOR_1D_TO_LABEL)
+            mask = mask.float()
+
         if self.transform:
             image, mask = self.transform(image, mask)
-        return image, mask
+
+        if mask is None:
+            return SegmentationItem(
+                image=image,
+                image_filename=self.segments_paths[idx]["segment_path"].name,
+            )
+
+        return SegmentationItem(
+            image=image,
+            image_filename=self.segments_paths[idx]["segment_path"].name,
+            labels=mask,
+        )

@@ -8,8 +8,10 @@ from pytorch_lightning.callbacks import (
     EarlyStopping,
     ModelCheckpoint,
 )
+
 from pytorch_lightning import LightningModule, Trainer
 from pytorch_lightning.loggers import TensorBoardLogger  # type: ignore[import]
+from pytorch_lightning.callbacks import ModelSummary
 from torch.utils.data import DataLoader, Subset, random_split
 from torchmetrics.classification import (
     BinaryAccuracy,
@@ -19,7 +21,11 @@ from torchmetrics.classification import (
 from torchmetrics.collections import MetricCollection
 
 from road_segmentation.dataset.auto_encoder_dataset import AEDataset
+from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
+
 from road_segmentation.model.auto_encoder import AutoEncoder, ae_transform_factory
+from road_segmentation.utils.prediction_writer_pl import OnBatchImageOutputWriter
+
 import warnings
 
 
@@ -37,6 +43,11 @@ train_parser = subparser.add_parser("train")
 predict_parser = subparser.add_parser("predict")
 
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
+predict_parser.add_argument("--input_dir", type=str, required=True)
+predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
+predict_parser.add_argument("--image_height", type=int, default=400)
+
+
 train_parser.add_argument("--dataset_dir", type=str, required=True)
 train_parser.add_argument("--lr", type=float, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
@@ -71,6 +82,37 @@ def split_train_val(
     train_subset, val_subset = random_split(dataset, [train_size, val_size])
     return train_subset, val_subset
 
+def predict(
+    device: torch.device,
+    model_ckpt_path: Path,
+    input_dir: Path,
+    prediction_output_dir: Path,
+    image_height: int = 400,
+):
+    
+    model = AutoEncoder.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
+        checkpoint_path=model_ckpt_path,
+    ).to(device)
+
+    predict_dataset = AEDataset.test_dataset(
+        input_dir,
+        transform=ae_transform_factory(image_height),
+    )
+    dataloader = DataLoader(
+        predict_dataset,
+        shuffle=False,
+    )
+    predictor = Trainer(
+        accelerator=str(device),
+        logger=False,
+        callbacks=[OnBatchImageOutputWriter(prediction_output_dir) ],
+    )
+    
+    predictor.predict(
+        model,
+        dataloaders=dataloader,
+        return_predictions=False,
+    )
 
 def train(  # noqa: PLR0913
     device: torch.device,
@@ -142,6 +184,7 @@ def train(  # noqa: PLR0913
 
     callbacks: list[Callback] = [  # type: ignore[no-any-unimported]
         checkpoint_callback,
+        ModelSummary(max_depth=-1),
     ]
 
     if early_stop:
@@ -171,7 +214,13 @@ def main() -> None:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     if args.mode == "predict":
-        raise NotImplementedError("Predict mode not implemented yet")
+        predict(
+            device,
+            Path(args.model_ckpt_path),
+            Path(args.input_dir),
+            Path(args.prediction_output_dir),
+            args.image_height,
+        )
     else:
         train(
             device,
