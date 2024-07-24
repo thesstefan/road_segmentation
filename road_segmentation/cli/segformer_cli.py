@@ -70,7 +70,7 @@ train_parser.add_argument("--resume_checkpoint", type=str, default=None)
 train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
 train_parser.add_argument("--experiment_name", type=str, default=None)
 train_parser.add_argument(
-    "--use_clahe",
+    "--clahe",
     action=argparse.BooleanOptionalAction,
     type=bool,
     default=True,
@@ -102,7 +102,7 @@ def predict(
     model_ckpt_path: Path,
     input_dir: Path,
     prediction_output_dir: Path,
-    use_clahe: bool,
+    clahe: bool,
 ) -> None:
     model = RoadSegformer.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
@@ -111,7 +111,7 @@ def predict(
     predict_dataset = ETHZDataset.test_dataset(
         input_dir,
         transform=clahe_segformer_data_transform
-        if use_clahe
+        if clahe
         else segformer_feature_extractor,
     )
     dataloader = DataLoader(
@@ -152,7 +152,7 @@ def train(  # noqa: PLR0913
     ckpt_save_dir: Path,
     ckpt_monitor: str,
     resume_checkpoint: Path | None,
-    use_clahe: bool,
+    clahe: bool,
 ) -> None:
     dataset = get_datasets(
         dataset_dir,
@@ -161,7 +161,7 @@ def train(  # noqa: PLR0913
         chesa_dataset_dir,
         mass_dataset_dir,
         clahe_segformer_data_transform
-        if use_clahe
+        if clahe
         else segformer_feature_extractor,
     )
 
@@ -248,7 +248,7 @@ def main() -> None:
             Path(args.model_ckpt_path),
             Path(args.ethz_input_dir),
             Path(args.prediction_output_dir),
-            args.use_clahe,
+            args.clahe,
         )
     else:
         train(
@@ -271,7 +271,7 @@ def main() -> None:
             Path(args.ckpt_save_dir),
             args.ckpt_monitor,
             Path(args.resume_checkpoint) if args.resume_checkpoint else None,
-            args.use_clahe,
+            args.clahe,
         )
 
 
