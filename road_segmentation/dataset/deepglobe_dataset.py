@@ -31,28 +31,6 @@ class DeepGlobeDataset(Dataset[SegmentationItem]):
         root: Path,
         transform: ImageAndMaskTransform | None = None,
     ) -> DeepGlobeDataset:
-        # if not root.exists():
-        #     error_message = f"DeepGlobe Dataset not found at {root!s}"
-        #     raise FileNotFoundError(error_message)
-
-        # image_paths = []
-
-        # for image_file in root.glob("*_sat.jpg"):
-        #     # Construct the mask filename by replacing '_sat.jpg' with '_mask.png'
-        #     mask_filename = image_file.name.replace("_sat.jpg", "_mask.png")
-        #     mask_path = root / mask_filename
-            
-        #     # Check if the corresponding mask file exists
-        #     if mask_path.exists():
-        #         # Add the image and mask paths as a dictionary to the list
-        #         image_paths.append({
-        #             "image_path": image_file,
-        #             "mask_path": mask_path,
-        #         })
-        #     else:
-        #         print(f"Warning: Mask not found for image {image_file}")
-
-        # return cls(image_paths, transform=transform)
         
         if not root.exists():
             error_message = f"DeepGlobe Dataset not found at {root!s}"

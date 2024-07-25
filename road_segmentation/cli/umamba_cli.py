@@ -209,15 +209,6 @@ def train(  # noqa: PLR0913
 def main() -> None:
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # if torch.cuda.is_available():
-    #     # Install the package if CUDA is available
-    #     subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'causal-conv1d'])
-    #     subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'mamba-ssm'])
-    #     print(f"{'mamba-ssm'} installed successfully.")
-    # else:
-    #     # Raise an error if CUDA is not available
-    #     raise EnvironmentError("This program can only be run on CUDA-enabled devices.")
 
 
     if args.mode == "predict":
