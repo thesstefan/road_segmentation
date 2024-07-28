@@ -142,21 +142,19 @@ class RoadSegformer(pl.LightningModule):
             return_dict=False,
         )
 
-        predicted = upsample_logits(logits, labels.shape[-2:]).float()
-
         tversky_loss = losses.TverskyLoss(
             mode="binary",
-            from_logits=False,
             alpha=self.tversky_alpha,
             beta=self.tversky_beta,
-        )(predicted, labels)
+        )(logits, labels)
 
         focal_loss = losses.FocalLoss(
             mode="binary",
             alpha=self.focal_alpha,
             gamma=self.focal_gamma,
-        )(predicted, labels)
+        )(logits, labels)
 
+        predicted = upsample_logits(logits, labels.shape[-2:]).float()
         if self.metrics:
             self.metrics[phase].update(predicted, labels)
 
