@@ -109,8 +109,13 @@ class RoadSegformer(pl.LightningModule):
             "lr",
             "train_dataset_name",
             "segformer_ckpt",
+            "tvserky_loss_factor",
+            "tversky_alpha",
+            "tversky_beta",
             "focal_loss_factor",
-            "dice_loss_factor",
+            "focal_alpha",
+            "focal_gamma",
+            "bce_loss_factor",
         )
 
         self.tversky_loss_factor = tversky_loss_factor
