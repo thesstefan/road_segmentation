@@ -73,6 +73,7 @@ class RoadSegformer(pl.LightningModule):
         dataloaders: dict[str, DataLoader[SegmentationItem]] | None = None,
         metrics: MetricCollection | None = None,
         metrics_interval: int = 20,
+        train_dataset_name: str = "unknown",
         tversky_loss_factor: float = 0.0,
         tversky_alpha: float = 0.5,
         tversky_beta: float = 0.5,
