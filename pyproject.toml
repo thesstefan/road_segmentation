@@ -27,7 +27,9 @@ where = ["."]
 road_segmentation = "road_segmentation.cli.entrypoint:main"
 road_segformer = "road_segmentation.cli.segformer_cli:main"
 unet_simple = "road_segmentation.cli.unet_simple_cli:main"
-
+imputation_data_creation = "road_segmentation.cli.imputation_dataset_creation_cli:main"
+auto_encoder = "road_segmentation.cli.auto_encoder_cli:main"
+seg_imputation = "road_segmentation.cli.segment_imputation_cli:main"
 
 [tool.ruff]
 line-length = 80

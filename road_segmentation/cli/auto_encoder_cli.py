@@ -2,15 +2,17 @@ import argparse
 import logging
 from pathlib import Path
 
-import lightning.pytorch as pl  # type: ignore[import]
 import torch
-from lightning.pytorch.callbacks import (
+from pytorch_lightning.callbacks import (
     Callback,
     EarlyStopping,
     ModelCheckpoint,
 )
-from lightning.pytorch.loggers import TensorBoardLogger  # type: ignore[import]
-from torch.utils.data import Dataset, DataLoader, Subset, random_split
+
+from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning.loggers import TensorBoardLogger  # type: ignore[import]
+from pytorch_lightning.callbacks import ModelSummary
+from torch.utils.data import DataLoader, Subset, random_split
 from torchmetrics.classification import (
     BinaryAccuracy,
     BinaryF1Score,
@@ -18,13 +20,17 @@ from torchmetrics.classification import (
 )
 from torchmetrics.collections import MetricCollection
 
+from road_segmentation.dataset.auto_encoder_dataset import AEDataset
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
-from road_segmentation.dataset.merged_datasets import get_datasets
-from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from road_segmentation.model.unet_simple import UNetSimple, unet_transforms
-from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
+
+from road_segmentation.model.auto_encoder import AutoEncoder, ae_transform_factory
+from road_segmentation.utils.prediction_writer_pl import OnBatchImageOutputWriter
 
 import warnings
+
+
+
+
 warnings.filterwarnings("ignore")
 
 logger = logging.getLogger(__name__)
@@ -37,83 +43,85 @@ train_parser = subparser.add_parser("train")
 predict_parser = subparser.add_parser("predict")
 
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
-predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
+predict_parser.add_argument("--input_dir", type=str, required=True)
 predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
-train_parser.add_argument("--ckpt_save_dir", type=str, required=True)
+predict_parser.add_argument("--image_height", type=int, default=400)
+
 
 train_parser.add_argument("--dataset_dir", type=str, required=True)
-train_parser.add_argument("--epfl_dataset_dir", type=str, default= None)
-train_parser.add_argument("--deepglobe_dataset_dir", type=str, default= None)
-train_parser.add_argument("--chesa_dataset_dir", type=str, default= None)
-
 train_parser.add_argument("--lr", type=float, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
 train_parser.add_argument("--batch_size", type=int, default=2)
-train_parser.add_argument("--metrics_interval", type=int, default=5)
+train_parser.add_argument("--ae_base", type=str, default=None)
 train_parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
-train_parser.add_argument("--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True,)
-
+train_parser.add_argument(
+    "--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True
+)
+train_parser.add_argument("--ckpt_save_dir", type=str, required=True)
 train_parser.add_argument("--ckpt_save_top_k", type=int, default=1)
-train_parser.add_argument("--ckpt_monitor", type=str, default="val/loss")
+train_parser.add_argument("--ckpt_monitor", type=str, default="val_loss")
 train_parser.add_argument("--resume_checkpoint", type=str, default=None)
 train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
 train_parser.add_argument("--experiment_name", type=str, default=None)
+train_parser.add_argument(
+    "--pretrained", action=argparse.BooleanOptionalAction, type=bool, default=True
+)
+train_parser.add_argument("--image_height", type=int, default=400)
+train_parser.add_argument("--enc_type", type=str, default="resnet18")
+train_parser.add_argument("--enc_out_dim", type=int, default=512)
+train_parser.add_argument("--latent_dim", type=int, default=256)
 
 
 def split_train_val(
-    dataset: Dataset,
+    dataset: AEDataset,
     train_ratio: float,
-) -> tuple[Subset[SegmentationItem], Subset[SegmentationItem]]:
+) -> tuple[Subset[tuple], Subset[tuple]]:
     train_size = int(train_ratio * len(dataset))
     val_size = len(dataset) - train_size
 
     train_subset, val_subset = random_split(dataset, [train_size, val_size])
     return train_subset, val_subset
 
-
 def predict(
     device: torch.device,
     model_ckpt_path: Path,
     input_dir: Path,
     prediction_output_dir: Path,
-) -> None:
-    model = UNetSimple.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
+    image_height: int = 400,
+):
+    
+    model = AutoEncoder.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
     ).to(device)
 
-    predict_dataset = ETHZDataset.test_dataset(     # TODO generalize
+    predict_dataset = AEDataset.test_dataset(
         input_dir,
-        transform=unet_transforms,
+        transform=ae_transform_factory(image_height),
     )
     dataloader = DataLoader(
         predict_dataset,
-        batch_size=model.batch_size,
         shuffle=False,
     )
-    predictor = pl.Trainer(
+    predictor = Trainer(
         accelerator=str(device),
         logger=False,
-        callbacks=[OnBatchImageOutputWriter(prediction_output_dir)],
+        callbacks=[OnBatchImageOutputWriter(prediction_output_dir) ],
     )
-
+    
     predictor.predict(
         model,
         dataloaders=dataloader,
         return_predictions=False,
     )
 
-
 def train(  # noqa: PLR0913
     device: torch.device,
     experiment_name: str | None,
     dataset_dir: str,
-    epfl_dataset_dir: str | None,
-    deepglobe_dataset_dir: str | None,
-    chesa_dataset_dir: str | None,
     lr: float,
     epochs: int,
     batch_size: int,
-    metrics_interval: int,
+    ae_base: str | None,
     train_val_split_ratio: float,
     tb_logdir: Path,
     early_stop: bool,  # noqa: FBT001
@@ -121,15 +129,17 @@ def train(  # noqa: PLR0913
     ckpt_save_dir: Path,
     ckpt_monitor: str,
     resume_checkpoint: Path | None,
+    pretrained: bool = True,
+    image_height: int = 400,
+    enc_type: str = "resnet18",
+    enc_out_dim: int = 512,
+    latent_dim: int = 256,
 ) -> None:
-    dataset = get_datasets(
-        dataset_dir,
-        epfl_dataset_dir,
-        deepglobe_dataset_dir,
-        chesa_dataset_dir,
-        unet_transforms
+
+    dataset = AEDataset.train_dataset(
+        Path(dataset_dir), ae_transform_factory(image_height)
     )
-    
+
     train_dataset, val_dataset = split_train_val(
         dataset,
         train_val_split_ratio,
@@ -147,27 +157,22 @@ def train(  # noqa: PLR0913
             shuffle=False,
         ),
     }
-
-    metrics = MetricCollection(
-        {
-            "accuracy": BinaryAccuracy(),
-            "f1": BinaryF1Score(),
-            "jaccard": BinaryJaccardIndex(),
-        },
-    ).to(device)
-
-    model = UNetSimple(
-        batch_size=batch_size,
-        dataloaders=dataloaders,
-        metrics=metrics,
+    model = AutoEncoder(
+        ae_ckpt=ae_base,
+        input_height=image_height,
+        enc_type=enc_type,
+        enc_out_dim=enc_out_dim,
+        latent_dim=latent_dim,
         lr=lr,
-        metrics_interval=metrics_interval,
-        train_dataset_name="ETHZDataset",
     )
+
+    #model = AE(input_height=image_height)
+    if pretrained and not ae_base:
+        model.from_pretrained("cifar10-resnet18")
 
     logger = TensorBoardLogger(
         tb_logdir,
-        name=experiment_name or "UNetSimple",
+        name=experiment_name or "AutoEncoder_Imputation",
         default_hp_metric=False,
     )
 
@@ -179,6 +184,7 @@ def train(  # noqa: PLR0913
 
     callbacks: list[Callback] = [  # type: ignore[no-any-unimported]
         checkpoint_callback,
+        ModelSummary(max_depth=-1),
     ]
 
     if early_stop:
@@ -191,7 +197,7 @@ def train(  # noqa: PLR0913
         )
         callbacks.append(early_stop_callback)
 
-    trainer = pl.Trainer(
+    trainer = Trainer(
         accelerator=str(device),
         max_epochs=epochs,
         val_check_interval=len(dataloaders["train"]),
@@ -199,10 +205,11 @@ def train(  # noqa: PLR0913
         callbacks=callbacks,
     )
 
-    trainer.fit(model, ckpt_path=resume_checkpoint)
+    trainer.fit(model, ckpt_path=resume_checkpoint, train_dataloaders=dataloaders["train"], val_dataloaders=dataloaders["val"])
 
 
 def main() -> None:
+
     args = parser.parse_args()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -210,21 +217,19 @@ def main() -> None:
         predict(
             device,
             Path(args.model_ckpt_path),
-            Path(args.ethz_input_dir),
+            Path(args.input_dir),
             Path(args.prediction_output_dir),
+            args.image_height,
         )
     else:
         train(
             device,
             args.experiment_name,
             args.dataset_dir,
-            args.epfl_dataset_dir,
-            args.deepglobe_dataset_dir,
-            args.chesa_dataset_dir,
             args.lr,
             args.epochs,
             args.batch_size,
-            args.metrics_interval,
+            args.ae_base,
             args.train_val_split_ratio,
             Path(args.tb_logdir),
             args.early_stop,
@@ -232,6 +237,11 @@ def main() -> None:
             Path(args.ckpt_save_dir),
             args.ckpt_monitor,
             Path(args.resume_checkpoint) if args.resume_checkpoint else None,
+            args.pretrained,
+            args.image_height,
+            args.enc_type,
+            args.enc_out_dim,
+            args.latent_dim,
         )
 
 
