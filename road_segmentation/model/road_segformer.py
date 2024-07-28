@@ -55,8 +55,8 @@ class RoadSegformer(pl.LightningModule):
 
     train_dataset_name: str
 
-    dice_loss_factor: int = 0
-    focal_loss_factor: int = 0
+    dice_loss_factor: float = 0
+    focal_loss_factor: float = 0
 
     def __init__(  # noqa: PLR0913
         self,
@@ -117,7 +117,7 @@ class RoadSegformer(pl.LightningModule):
             return_dict=False,
         )
 
-        predicted = upsample_logits(logits, labels.shape[-2:])
+        predicted = upsample_logits(logits, labels.shape[-2:]).float()
 
         dice_loss = losses.DiceLoss(mode="binary")(predicted, labels)
         focal_loss = losses.FocalLoss(mode="binary")(predicted, labels)
