@@ -81,6 +81,8 @@ train_parser.add_argument(
     type=bool,
     default=True,
 )
+train_parser.add_argument("--dice_loss_factor", type=float, default=0.0)
+train_parser.add_argument("--focal_loss_factor", type=float, default=0.0)
 
 
 def clahe_segformer_data_transform(
@@ -159,6 +161,8 @@ def train(  # noqa: PLR0913
     ckpt_monitor: str,
     resume_checkpoint: Path | None,
     clahe: bool,
+    dice_loss_factor: int,
+    focal_loss_factor: int,
 ) -> None:
     dataset = get_datasets(
         dataset_dir,
@@ -205,6 +209,8 @@ def train(  # noqa: PLR0913
         lr=lr,
         metrics_interval=metrics_interval,
         train_dataset_name="ETHZDataset",
+        dice_loss_factor=dice_loss_factor,
+        focal_loss_factor=focal_loss_factor,
     )
 
     logger = TensorBoardLogger(
@@ -278,6 +284,8 @@ def main() -> None:
             args.ckpt_monitor,
             Path(args.resume_checkpoint) if args.resume_checkpoint else None,
             args.clahe,
+            args.dice_loss_factor,
+            args.focal_loss_factor,
         )
 
 

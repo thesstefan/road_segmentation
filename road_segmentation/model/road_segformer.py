@@ -9,6 +9,7 @@ from transformers import (  # type: ignore[import]
 )
 
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
+from segmentation_models_pytorch import losses
 
 ID2LABEL = {0: "background", 1: "road"}
 LABEL2ID = {v: k for k, v in ID2LABEL.items()}
@@ -54,6 +55,9 @@ class RoadSegformer(pl.LightningModule):
 
     train_dataset_name: str
 
+    dice_loss_factor: int = 0
+    focal_loss_factor: int = 0
+
     def __init__(  # noqa: PLR0913
         self,
         segformer_ckpt: str,
@@ -62,6 +66,8 @@ class RoadSegformer(pl.LightningModule):
         dataloaders: dict[str, DataLoader[SegmentationItem]] | None = None,
         metrics: MetricCollection | None = None,
         metrics_interval: int = 20,
+        dice_loss_factor: int = 0,
+        focal_loss_factor: int = 0,
         train_dataset_name: str = "Unknown",
     ) -> None:
         super().__init__()
@@ -92,7 +98,11 @@ class RoadSegformer(pl.LightningModule):
             "lr",
             "train_dataset_name",
             "segformer_ckpt",
+            "focal_loss_factor",
+            "dice_loss_factor",
         )
+        self.focal_loss_factor = focal_loss_factor
+        self.dice_loss_factor = dice_loss_factor
 
     def _compute_loss_and_update_metrics(
         self,
@@ -109,10 +119,17 @@ class RoadSegformer(pl.LightningModule):
 
         predicted = upsample_logits(logits, labels.shape[-2:])
 
+        dice_loss = losses.DiceLoss(mode="binary")(predicted, labels)
+        focal_loss = losses.FocalLoss(mode="binary")(predicted, labels)
+
         if self.metrics:
             self.metrics[phase].update(predicted, labels)
 
-        return loss  # type: ignore[no-any-return]
+        return (
+            loss
+            + self.dice_loss_factor * dice_loss
+            + self.focal_loss_factor * focal_loss
+        )  # type: ignore[no-any-return]
 
     def _step(
         self,
