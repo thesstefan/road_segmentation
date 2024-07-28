@@ -142,19 +142,26 @@ class RoadSegformer(pl.LightningModule):
             return_dict=False,
         )
 
+        upsampled_logits: torch.Tensor = nn.functional.interpolate(  # type: ignore[reportUnknownMemberType]
+            logits,
+            size=labels.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        ).float()
+
         tversky_loss = losses.TverskyLoss(
             mode="binary",
             alpha=self.tversky_alpha,
             beta=self.tversky_beta,
-        )(logits, labels)
+        )(upsampled_logits, labels)
 
         focal_loss = losses.FocalLoss(
             mode="binary",
             alpha=self.focal_alpha,
             gamma=self.focal_gamma,
-        )(logits, labels)
+        )(upsampled_logits, labels)
 
-        predicted = upsample_logits(logits, labels.shape[-2:]).float()
+        predicted = upsampled_logits.argmax(dim=1)
         if self.metrics:
             self.metrics[phase].update(predicted, labels)
 
@@ -211,7 +218,14 @@ class RoadSegformer(pl.LightningModule):
         images = batch["image"]
         logits = self.segformer(pixel_values=images, return_dict=False)[0]
 
-        return upsample_logits(logits, images.shape[-2:])
+        upsampled_logits: torch.Tensor = nn.functional.interpolate(  # type: ignore[reportUnknownMemberType]
+            logits,
+            size=images.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        ).float()
+
+        return upsampled_logits.argmax(dim=1)
 
     def on_train_start(self) -> None:
         if self.logger:
