@@ -301,8 +301,13 @@ def main() -> None:
             args.ckpt_monitor,
             Path(args.resume_checkpoint) if args.resume_checkpoint else None,
             args.clahe,
-            args.dice_loss_factor,
+            args.tversky_loss_factor,
+            args.tversky_alpha,
+            args.tversky_beta,
             args.focal_loss_factor,
+            args.focal_alpha,
+            args.focal_gamma,
+            args.bce_loss_factor,
         )
 
 
