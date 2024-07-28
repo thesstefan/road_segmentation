@@ -150,13 +150,13 @@ class RoadSegformer(pl.LightningModule):
         ).float()
 
         tversky_loss = losses.TverskyLoss(
-            mode="binary",
+            mode="multiclass",
             alpha=self.tversky_alpha,
             beta=self.tversky_beta,
         )(upsampled_logits, labels)
 
         focal_loss = losses.FocalLoss(
-            mode="binary",
+            mode="multiclass",
             alpha=self.focal_alpha,
             gamma=self.focal_gamma,
         )(upsampled_logits, labels)
