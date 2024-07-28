@@ -55,8 +55,15 @@ class RoadSegformer(pl.LightningModule):
 
     train_dataset_name: str
 
-    dice_loss_factor: float = 0
-    focal_loss_factor: float = 0
+    tversky_loss_factor: float = 0.0
+    tversky_alpha: float = 0.5
+    tversky_beta: float = 0.5
+
+    focal_loss_factor: float = 0.0
+    focal_alpha: float | None = None
+    focal_gamma: float = 2.0
+
+    bce_loss_factor: float = 1.0
 
     def __init__(  # noqa: PLR0913
         self,
@@ -66,9 +73,13 @@ class RoadSegformer(pl.LightningModule):
         dataloaders: dict[str, DataLoader[SegmentationItem]] | None = None,
         metrics: MetricCollection | None = None,
         metrics_interval: int = 20,
-        dice_loss_factor: int = 0,
-        focal_loss_factor: int = 0,
-        train_dataset_name: str = "Unknown",
+        tversky_loss_factor: float = 0.0,
+        tversky_alpha: float = 0.5,
+        tversky_beta: float = 0.5,
+        focal_loss_factor: float = 0.0,
+        focal_alpha: float | None = None,
+        focal_gamma: float = 2.0,
+        bce_loss_factor: float = 1.0,
     ) -> None:
         super().__init__()
 
@@ -101,8 +112,16 @@ class RoadSegformer(pl.LightningModule):
             "focal_loss_factor",
             "dice_loss_factor",
         )
+
+        self.tversky_loss_factor = tversky_loss_factor
+        self.tversky_alpha = tversky_alpha
+        self.tversky_beta = tversky_beta
+
         self.focal_loss_factor = focal_loss_factor
-        self.dice_loss_factor = dice_loss_factor
+        self.focal_alpha = focal_alpha
+        self.focal_gamma = focal_gamma
+
+        self.bce_loss_factor = bce_loss_factor
 
     def _compute_loss_and_update_metrics(
         self,
@@ -111,7 +130,7 @@ class RoadSegformer(pl.LightningModule):
     ) -> torch.Tensor:
         images, labels = batch["image"], batch["labels"]
 
-        (loss, logits) = self.segformer(
+        (bce_loss, logits) = self.segformer(
             pixel_values=images,
             labels=labels,
             return_dict=False,
@@ -119,15 +138,25 @@ class RoadSegformer(pl.LightningModule):
 
         predicted = upsample_logits(logits, labels.shape[-2:]).float()
 
-        dice_loss = losses.DiceLoss(mode="binary")(predicted, labels)
-        focal_loss = losses.FocalLoss(mode="binary")(predicted, labels)
+        tversky_loss = losses.TverskyLoss(
+            mode="binary",
+            from_logits=False,
+            alpha=self.tversky_alpha,
+            beta=self.tversky_beta,
+        )(predicted, labels)
+
+        focal_loss = losses.FocalLoss(
+            mode="binary",
+            alpha=self.focal_alpha,
+            gamma=self.focal_gamma,
+        )(predicted, labels)
 
         if self.metrics:
             self.metrics[phase].update(predicted, labels)
 
         return (
-            loss
-            + self.dice_loss_factor * dice_loss
+            self.bce_loss_factor * bce_loss
+            + self.tversky_loss_factor * tversky_loss
             + self.focal_loss_factor * focal_loss
         )  # type: ignore[no-any-return]
 

@@ -81,8 +81,15 @@ train_parser.add_argument(
     type=bool,
     default=True,
 )
-train_parser.add_argument("--dice_loss_factor", type=float, default=0.0)
+train_parser.add_argument("--tversky_loss_factor", type=float, default=0.0)
+train_parser.add_argument("--tversky_alpha", type=float, default=0.5)
+train_parser.add_argument("--tversky_beta", type=float, default=0.5)
+
 train_parser.add_argument("--focal_loss_factor", type=float, default=0.0)
+train_parser.add_argument("--focal_alpha", type=float, default=None)
+train_parser.add_argument("--focal_gamma", type=float, default=2.0)
+
+train_parser.add_argument("--bce_loss_factor", type=float, default=1.0)
 
 
 def clahe_segformer_data_transform(
@@ -161,8 +168,13 @@ def train(  # noqa: PLR0913
     ckpt_monitor: str,
     resume_checkpoint: Path | None,
     clahe: bool,
-    dice_loss_factor: int,
-    focal_loss_factor: int,
+    tversky_loss_factor: float = 0.0,
+    tversky_alpha: float = 0.5,
+    tversky_beta: float = 0.5,
+    focal_loss_factor: float = 0.0,
+    focal_alpha: float | None = None,
+    focal_gamma: float = 2.0,
+    bce_loss_factor: float = 1.0,
 ) -> None:
     dataset = get_datasets(
         dataset_dir,
@@ -209,8 +221,13 @@ def train(  # noqa: PLR0913
         lr=lr,
         metrics_interval=metrics_interval,
         train_dataset_name="ETHZDataset",
-        dice_loss_factor=dice_loss_factor,
+        tversky_loss_factor=tversky_loss_factor,
+        tversky_alpha=tversky_alpha,
+        tversky_beta=tversky_beta,
         focal_loss_factor=focal_loss_factor,
+        focal_alpha=focal_alpha,
+        focal_gamma=focal_gamma,
+        bce_loss_factor=bce_loss_factor,
     )
 
     logger = TensorBoardLogger(
