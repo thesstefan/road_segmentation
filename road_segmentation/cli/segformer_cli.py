@@ -44,8 +44,14 @@ predict_parser = subparser.add_parser("predict")
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
 predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
-train_parser.add_argument("--ckpt_save_dir", type=str, required=True)
+predict_parser.add_argument(
+    "--clahe",
+    action=argparse.BooleanOptionalAction,
+    type=bool,
+    default=True,
+)
 
+train_parser.add_argument("--ckpt_save_dir", type=str, required=True)
 train_parser.add_argument("--dataset_dir", type=str, required=True)
 train_parser.add_argument("--epfl_dataset_dir", type=str, default=None)
 train_parser.add_argument("--deepglobe_dataset_dir", type=str, default=None)
