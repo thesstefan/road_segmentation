@@ -48,7 +48,6 @@ train_parser.add_argument("--dataset_folders", type=str, nargs="*", default=None
 train_parser.add_argument("--lr", type=float, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
 train_parser.add_argument("--batch_size", type=int, default=2)
-train_parser.add_argument("--ae_base", type=str, default=None)
 train_parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
 train_parser.add_argument(
     "--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True
@@ -59,9 +58,7 @@ train_parser.add_argument("--ckpt_monitor", type=str, default="val_loss")
 train_parser.add_argument("--resume_checkpoint", type=str, default=None)
 train_parser.add_argument("--tb_logdir", type=str, default="tb_logs")
 train_parser.add_argument("--experiment_name", type=str, default=None)
-train_parser.add_argument(
-    "--pretrained", action=argparse.BooleanOptionalAction, type=bool, default=True
-)
+
 train_parser.add_argument("--image_height", type=int, default=512)
 train_parser.add_argument("--depth", type=int, default=5)
 
