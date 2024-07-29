@@ -1,7 +1,7 @@
 import argparse
 import logging
 from pathlib import Path
-import os
+import os 
 
 import torch
 from pytorch_lightning.callbacks import (
@@ -15,13 +15,14 @@ from pytorch_lightning.loggers import TensorBoardLogger  # type: ignore[import]
 from pytorch_lightning.callbacks import ModelSummary
 from torch.utils.data import DataLoader, Subset, random_split
 
-from road_segmentation.dataset.auto_encoder_dataset import AEDataset
+from road_segmentation.dataset.auto_encoder_dataset import AEDataset, PretrainingDataset
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
-
 
 from road_segmentation.model.unet_denoising import UNet, ae_transform_factory
 from road_segmentation.utils.prediction_writer_pl import OnBatchImageOutputWriter
+#from road_segmentation.utils.prediction_callback import PredictionCallback
 import warnings
+
 
 
 
@@ -47,6 +48,7 @@ train_parser.add_argument("--dataset_folders", type=str, nargs="*", default=None
 train_parser.add_argument("--lr", type=float, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
 train_parser.add_argument("--batch_size", type=int, default=2)
+train_parser.add_argument("--ae_base", type=str, default=None)
 train_parser.add_argument("--train_val_split_ratio", type=float, default=0.9)
 train_parser.add_argument(
     "--early_stop", action=argparse.BooleanOptionalAction, type=bool, default=True
@@ -74,7 +76,6 @@ def split_train_val(
     train_subset, val_subset = random_split(dataset, [train_size, val_size])
     return train_subset, val_subset
 
-
 def predict(
     device: torch.device,
     model_ckpt_path: Path,
@@ -82,7 +83,7 @@ def predict(
     prediction_output_dir: Path,
     image_height: int = 400,
 ):
-
+    
     model = UNet.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
     ).to(device)
@@ -98,7 +99,7 @@ def predict(
     predictor = Trainer(
         accelerator=str(device),
         logger=False,
-        callbacks=[OnBatchImageOutputWriter(prediction_output_dir)],
+        callbacks=[OnBatchImageOutputWriter(prediction_output_dir) ],
     )
     predictor.predict(
         model,
@@ -106,14 +107,11 @@ def predict(
         return_predictions=False,
     )
 
-
 def train(
     device: torch.device,
     experiment_name: str | None,
     dataset_dir: str,
-    data_set_folders: (
-        list[Path] | None
-    ),  # if multiple dataset_dir contains multiple folders
+    data_set_folders: list[Path] | None, #if multiple dataset_dir contains multiple folders
     lr: float,
     epochs: int,
     batch_size: int,
@@ -126,21 +124,19 @@ def train(
     resume_checkpoint: Path | None,
     image_height: int,
     depth: int = 4,
-):
-
-    ckpt_save_dir = ckpt_save_dir / Path(f"depth={depth}")
+    ):
+    
+    ckpt_save_dir = ckpt_save_dir / Path(f'depth={depth}')
 
     dataset = AEDataset.train_dataset(
-        Path(dataset_dir),
-        ae_transform_factory(image_height, image_height),
-        data_set_folders,
+        Path(dataset_dir), ae_transform_factory(image_height, image_height), data_set_folders,
     )
-
+    
     train_dataset, val_dataset = split_train_val(
         dataset,
         train_val_split_ratio,
     )
-
+    
     dataloaders = {
         "train": DataLoader(
             train_dataset,
@@ -186,12 +182,8 @@ def train(
         logger=logger,
         callbacks=callbacks,
     )
-    trainer.fit(
-        model,
-        ckpt_path=resume_checkpoint,
-        train_dataloaders=dataloaders["train"],
-        val_dataloaders=dataloaders["val"],
-    )
+    trainer.fit(model, ckpt_path=resume_checkpoint, train_dataloaders=dataloaders["train"], val_dataloaders=dataloaders["val"])
+
 
 
 def main() -> None:
@@ -212,11 +204,7 @@ def main() -> None:
             device,
             args.experiment_name,
             args.dataset_dir,
-            (
-                [Path(folder) for folder in args.dataset_folders]
-                if args.dataset_folders
-                else None
-            ),
+            [Path(folder) for folder in args.dataset_folders] if args.dataset_folders else None,
             args.lr,
             args.epochs,
             args.batch_size,
