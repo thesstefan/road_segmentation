@@ -27,7 +27,7 @@ from torch import nn
 import torch.nn.functional as F
 from road_segmentation.model.impl.swish import CustomSwish
 from road_segmentation.model.impl.ws_conv import WNConv2d
-from pytorch_lightning import LightningModule
+import lightning.pytorch as pl
 from torchvision.transforms.functional import resize
 from torchvision.transforms import InterpolationMode
 
@@ -53,6 +53,30 @@ def ae_transform_factory(input_height: int, output_height):
 
     return transform
 
+def segmentation_transform_factory(input_height: int, output_height):
+    def transform(image, labels=None):
+        image = image.view(1, *image.shape).float()
+        image_rs = resize(
+            image,
+            size=(input_height, input_height),
+            interpolation=InterpolationMode.BICUBIC,
+        )
+        image_rs = image_rs.squeeze()
+        image_rs = image_rs.float()
+
+        if not labels is None:
+            labels = labels.view(1, *labels.shape)
+            labels_rs = resize(
+                labels,
+                size=(output_height, output_height),
+                interpolation=InterpolationMode.NEAREST,
+            )
+            labels_rs = labels_rs.float()
+            return image_rs, labels_rs
+        else:
+            return image_rs, None
+
+    return transform
 
 def get_groups(channels: int) -> int:
     """
@@ -69,16 +93,21 @@ def get_groups(channels: int) -> int:
     return sorted(divisors)[len(divisors) // 2]
 
 
-class UNet(LightningModule):
+class UNet(pl.LightningModule):
     def __init__(
             self,
+            batch_size: int,
             lr: float = 1e-3,
             in_channels=1,
             depth=5,
             wf=4,
             padding=True,
             norm="group",
-            up_mode='upconv'):
+            up_mode='upconv',
+            metrics=None,
+            metrics_interval: int = 20,
+            dataloaders = None,
+            ):
         """
         A modified U-Net implementation [1].
 
@@ -109,7 +138,9 @@ class UNet(LightningModule):
         self.wf = wf
         self.norm = norm
         self.up_mode = up_mode
+        self.batch_size = batch_size
         self.save_hyperparameters(
+            "batch_size",
             "lr",
             "in_channels",
             "depth",
@@ -117,6 +148,17 @@ class UNet(LightningModule):
             "padding",
             "norm",
             "up_mode",
+        )
+        self.metrics_interval = metrics_interval
+        self.dataloaders = dataloaders
+        self.metrics = (
+            {
+                "train": metrics.clone(prefix="train/"),
+                "val": metrics.clone(prefix="val/"),
+                "test": metrics.clone(prefix="test/"),
+            }
+            if metrics
+            else None
         )
         prev_channels = in_channels
         self.down_path = nn.ModuleList()
@@ -166,27 +208,103 @@ class UNet(LightningModule):
     def get_features(self, x):
         return self.forward_without_last(x)
     
-    def step(self, batch, batch_idx):
-        x = batch['image']
-        y = batch['labels']
-        y_hat = self.forward(x)
-        loss = F.binary_cross_entropy(y_hat, y)
-        return loss, {"loss": loss}
+    def _compute_loss_and_update_metrics(
+        self,
+        batch: dict[str, torch.Tensor],
+        phase: str,
+    ) -> torch.Tensor:
+        images, labels = batch["image"], batch["labels"]
 
-    def training_step(self, batch, batch_idx):
-        loss, logs = self.step(batch, batch_idx)
-        self.log_dict({f"train_{k}": v for k, v in logs.items()}, on_step=True, on_epoch=False)
+        probs = self.forward(images)
+        loss = F.binary_cross_entropy(probs, labels) 
+
+        predicted = (probs >= 0.5).float()
+
+        if self.metrics:
+            self.metrics[phase].update(predicted, labels)
+
+        return loss  # type: ignore[no-any-return]
+
+    def _step(
+        self,
+        batch: dict[str, torch.Tensor],
+        batch_idx: int,
+        phase: str,
+    ) -> torch.Tensor:
+        loss = self._compute_loss_and_update_metrics(batch, phase)
+        self.log(f"{phase}/loss", value=loss, batch_size=self.batch_size)  # type: ignore[reportUnkonwnMemberType]
+
+        if self.metrics and (
+            phase == "test"
+            or (batch_idx and batch_idx % self.metrics_interval == 0)
+        ):
+            metric_results = self.metrics[phase].compute()
+            self.log_dict(metric_results, batch_size=self.batch_size)  # type: ignore[reportUnkonwnMemberType]
+
         return loss
     
-    def validation_step(self, batch, batch_idx):
-        loss, logs = self.step(batch, batch_idx)
-        self.log_dict({f"val_{k}": v for k, v in logs.items()})
-        return loss
+    def training_step(  # type: ignore[reportIncompatibleMethodOverride]
+        self,
+        batch: dict[str, torch.Tensor],
+        batch_idx: int,
+    ) -> torch.Tensor:
+        return self._step(batch, batch_idx, "train")
+
+    def validation_step(  # type: ignore[reportIncompatibleMethodOverride]
+        self,
+        batch: dict[str, torch.Tensor],
+        batch_idx: int,
+    ) -> None:
+        self._step(batch, batch_idx, "val")
+
+    def test_step(  # type: ignore[reportIncompatibleMethodOverride]
+        self,
+        batch: dict[str, torch.Tensor],
+        batch_idx: int,
+    ) -> None:
+        self._step(batch, batch_idx, "test")
+
+    def predict_step(  # type: ignore[reportIncompatibleMethodOverride]
+        self,
+        batch: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        images = batch["image"]
+        probs = self.forward(images)
+
+        return (probs >= 0.5).float()
     
-    def predict_step(self, batch, batch_idx):
-        x = batch["image"]
-        output = self.forward(x)
-        return (output >= 0.5).float()
+    def on_train_start(self) -> None:
+        if self.logger:
+            self.logger.log_hyperparams(self.hparams)
+    def train_dataloader(self):
+        return self.dataloaders.get("train")
+
+    def val_dataloader(self):
+        return self.dataloaders.get("val")
+
+    def test_dataloader(self):
+        return self.dataloaders.get("test")
+    # def step(self, batch, batch_idx):
+    #     x = batch['image']
+    #     y = batch['labels']
+    #     y_hat = self.forward(x)
+    #     loss = F.binary_cross_entropy(y_hat, y)
+    #     return loss, {"loss": loss}
+
+    # def training_step(self, batch, batch_idx):
+    #     loss, logs = self.step(batch, batch_idx)
+    #     self.log_dict({f"train_{k}": v for k, v in logs.items()}, on_step=True, on_epoch=False)
+    #     return loss
+    
+    # def validation_step(self, batch, batch_idx):
+    #     loss, logs = self.step(batch, batch_idx)
+    #     self.log_dict({f"val_{k}": v for k, v in logs.items()})
+    #     return loss
+    
+    # def predict_step(self, batch, batch_idx):
+    #     x = batch["image"]
+    #     output = self.forward(x)
+    #     return (output >= 0.5).float()
     
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
