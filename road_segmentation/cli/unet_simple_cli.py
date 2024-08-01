@@ -45,6 +45,7 @@ train_parser.add_argument("--dataset_dir", type=str, required=True)
 train_parser.add_argument("--epfl_dataset_dir", type=str, default= None)
 train_parser.add_argument("--deepglobe_dataset_dir", type=str, default= None)
 train_parser.add_argument("--chesa_dataset_dir", type=str, default= None)
+train_parser.add_argument("--mass_dataset_dir", type=str, default= None)
 
 train_parser.add_argument("--lr", type=str, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
@@ -81,7 +82,7 @@ def predict(
         checkpoint_path=model_ckpt_path,
     ).to(device)
 
-    predict_dataset = ETHZDataset.test_dataset(     # TODO generalize
+    predict_dataset = ETHZDataset.test_dataset(
         input_dir,
         transform=unet_transforms,
     )
@@ -102,7 +103,6 @@ def predict(
         return_predictions=False,
     )
 
-
 def train(  # noqa: PLR0913
     device: torch.device,
     experiment_name: str | None,
@@ -110,6 +110,7 @@ def train(  # noqa: PLR0913
     epfl_dataset_dir: str | None,
     deepglobe_dataset_dir: str | None,
     chesa_dataset_dir: str | None,
+    mass_dataset_dir: str | None,
     lr: float,
     epochs: int,
     batch_size: int,
@@ -127,6 +128,7 @@ def train(  # noqa: PLR0913
         epfl_dataset_dir,
         deepglobe_dataset_dir,
         chesa_dataset_dir,
+        mass_dataset_dir,
         unet_transforms
     )
     
@@ -221,6 +223,7 @@ def main() -> None:
             args.epfl_dataset_dir,
             args.deepglobe_dataset_dir,
             args.chesa_dataset_dir,
+            args.mass_dataset_dir,
             args.lr,
             args.epochs,
             args.batch_size,

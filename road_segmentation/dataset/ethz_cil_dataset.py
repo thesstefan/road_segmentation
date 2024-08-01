@@ -64,6 +64,7 @@ class ETHZDataset(Dataset[SegmentationItem]):
                 "image_path": image_path,
             }
             for image_path in (root / "images").iterdir()
+            if image_path.suffix == ".png"
         ]
 
         return cls(image_paths, transform=transform)

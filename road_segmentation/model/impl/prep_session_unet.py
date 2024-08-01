@@ -8,12 +8,12 @@ class Block(nn.Module):
         super().__init__()
         self.block = nn.Sequential(
             nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=3, padding=1),
-            nn.ReLU(),
+            nn.LeakyReLU(),
             nn.BatchNorm2d(out_ch),
             nn.Conv2d(
                 in_channels=out_ch, out_channels=out_ch, kernel_size=3, padding=1
             ),
-            nn.ReLU(),
+            nn.LeakyReLU(),
         )
 
     def forward(self, x):
