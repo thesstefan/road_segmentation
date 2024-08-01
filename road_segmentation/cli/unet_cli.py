@@ -87,7 +87,7 @@ def predict(
 
     predict_dataset = ETHZDataset.test_dataset(
         input_dir,
-        transform=segmentation_transform_factory(image_height),
+        transform=segmentation_transform_factory(image_height, image_height),
     )
     dataloader = DataLoader(
         predict_dataset,
