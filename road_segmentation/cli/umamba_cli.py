@@ -21,7 +21,7 @@ from torchmetrics.classification import (
 from torchmetrics.collections import MetricCollection
 
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
-from road_segmentation.dataset.merged_datasets import get_datasets
+from road_segmentation.dataset.merged_datasets import get_datasets, copy_dataset
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
 from road_segmentation.model.umamba import UMamba, umamba_transforms
 from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
@@ -41,6 +41,12 @@ predict_parser = subparser.add_parser("predict")
 predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
 predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
+predict_parser.add_argument("--epfl_dataset_dir", type=str, default=None)
+predict_parser.add_argument("--deepglobe_dataset_dir", type=str, default=None)
+predict_parser.add_argument("--chesa_dataset_dir", type=str, default=None)
+predict_parser.add_argument("--mass_dataset_dir", type=str, default=None)
+predict_parser.add_argument("--create_autoencoder_dataset", type=bool, default=False)
+
 train_parser.add_argument("--ckpt_save_dir", type=str, required=True)
 
 train_parser.add_argument("--dataset_dir", type=str, required=True)
@@ -79,15 +85,38 @@ def predict(
     model_ckpt_path: Path,
     input_dir: Path,
     prediction_output_dir: Path,
+    epfl_dataset_dir: str | None,
+    deepglobe_dataset_dir: str | None,
+    chesa_dataset_dir: str | None,
+    mass_dataset_dir: str | None,
+    create_autoencoder_dataset: bool,
 ) -> None:
     model = UMamba.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
     ).to(device)
-
-    predict_dataset = ETHZDataset.test_dataset(
-        input_dir,
-        transform=umamba_transforms,
-    )
+    if create_autoencoder_dataset:
+        predict_dataset = get_datasets(
+            input_dir,
+            epfl_dataset_dir,
+            deepglobe_dataset_dir,
+            chesa_dataset_dir,
+            mass_dataset_dir,
+            umamba_transforms,
+        )
+        copy_dataset(
+            input_dir,
+            epfl_dataset_dir,
+            deepglobe_dataset_dir,
+            chesa_dataset_dir,
+            mass_dataset_dir,
+            prediction_output_dir / Path("groundtruth"),
+        )
+    else:
+        predict_dataset = ETHZDataset.test_dataset(
+            input_dir,
+            transform=umamba_transforms,
+        )
+    
     dataloader = DataLoader(
         predict_dataset,
         batch_size=model.batch_size,
@@ -96,7 +125,7 @@ def predict(
     predictor = pl.Trainer(
         accelerator=str(device),
         logger=False,
-        callbacks=[OnBatchImageOutputWriter(prediction_output_dir)],
+        callbacks=[OnBatchImageOutputWriter(prediction_output_dir / Path("segments"))],
     )
 
     predictor.predict(
@@ -217,6 +246,11 @@ def main() -> None:
             Path(args.model_ckpt_path),
             Path(args.ethz_input_dir),
             Path(args.prediction_output_dir),
+            args.epfl_dataset_dir,
+            args.deepglobe_dataset_dir,
+            args.chesa_dataset_dir,
+            args.mass_dataset_dir,
+            args.create_autoencoder_dataset,
         )
     else:
         train(

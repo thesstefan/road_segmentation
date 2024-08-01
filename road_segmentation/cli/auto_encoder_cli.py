@@ -127,8 +127,6 @@ def train(  # noqa: PLR0913
     metrics_interval: int,
     ) -> None:
 
-    ckpt_save_dir = ckpt_save_dir / Path(f"depth={depth}")
-
     dataset = AEDataset.train_dataset(
         Path(dataset_dir),
         ae_transform_factory(image_height, image_height),

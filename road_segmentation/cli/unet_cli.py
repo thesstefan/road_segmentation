@@ -20,7 +20,7 @@ from torchmetrics.collections import MetricCollection
 
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
-from road_segmentation.dataset.merged_datasets import get_datasets
+from road_segmentation.dataset.merged_datasets import get_datasets, copy_dataset
 from road_segmentation.model.unet import UNet, segmentation_transform_factory
 from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
 
@@ -40,13 +40,19 @@ predict_parser.add_argument("--model_ckpt_path", type=str, required=True)
 predict_parser.add_argument("--ethz_input_dir", type=str, required=True)
 predict_parser.add_argument("--prediction_output_dir", type=str, required=True)
 predict_parser.add_argument("--image_height", type=int, default=512)
-
+predict_parser.add_argument("--epfl_dataset_dir", type=str, default=None)
+predict_parser.add_argument("--deepglobe_dataset_dir", type=str, default=None)
+predict_parser.add_argument("--chesa_dataset_dir", type=str, default=None)
+predict_parser.add_argument("--mass_dataset_dir", type=str, default=None)
+predict_parser.add_argument("--create_autoencoder_dataset", type=bool, default=False)
 train_parser.add_argument("--ckpt_save_dir", type=str, required=True)
 
 train_parser.add_argument("--dataset_dir", type=str, required=True)
 train_parser.add_argument("--epfl_dataset_dir", type=str, default= None)
 train_parser.add_argument("--deepglobe_dataset_dir", type=str, default= None)
 train_parser.add_argument("--chesa_dataset_dir", type=str, default= None)
+train_parser.add_argument("--mass_dataset_dir", type=str, default= None)
+
 
 train_parser.add_argument("--lr", type=str, default=6e-5)
 train_parser.add_argument("--epochs", type=int, default=50)
@@ -80,16 +86,39 @@ def predict(
     input_dir: Path,
     prediction_output_dir: Path,
     image_height: int,
+    epfl_dataset_dir: str | None,
+    deepglobe_dataset_dir: str | None,
+    chesa_dataset_dir: str | None,
+    mass_dataset_dir: str | None,
+    create_autoencoder_dataset: bool,
 ) -> None:
 
     model = UNet.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
     ).to(device)
+    if create_autoencoder_dataset:
+        predict_dataset = get_datasets(
+            input_dir,
+            epfl_dataset_dir,
+            deepglobe_dataset_dir,
+            chesa_dataset_dir,
+            mass_dataset_dir,
+            segmentation_transform_factory(image_height, image_height),
+        )
+        copy_dataset(
+            input_dir,
+            epfl_dataset_dir,
+            deepglobe_dataset_dir,
+            chesa_dataset_dir,
+            mass_dataset_dir,
+            prediction_output_dir / Path("groundtruth"),
+        )
+    else:
+        predict_dataset = ETHZDataset.test_dataset(
+            input_dir,
+            transform=segmentation_transform_factory(image_height, image_height),
+        )
 
-    predict_dataset = ETHZDataset.test_dataset(
-        input_dir,
-        transform=segmentation_transform_factory(image_height, image_height),
-    )
     dataloader = DataLoader(
         predict_dataset,
         batch_size=2,
@@ -98,7 +127,7 @@ def predict(
     predictor = pl.Trainer(
         accelerator=str(device),
         logger=False,
-        callbacks=[OnBatchImageOutputWriter(prediction_output_dir)],
+        callbacks=[OnBatchImageOutputWriter(prediction_output_dir / Path("segments"))],
     )
 
     predictor.predict(
@@ -116,6 +145,7 @@ def train(  # noqa: PLR0913
     epfl_dataset_dir: str | None,
     deepglobe_dataset_dir: str | None,
     chesa_dataset_dir: str | None,
+    mass_dataset_dir: str | None,
     lr: float,
     epochs: int,
     batch_size: int,
@@ -137,6 +167,7 @@ def train(  # noqa: PLR0913
         epfl_dataset_dir,
         deepglobe_dataset_dir,
         chesa_dataset_dir,
+        mass_dataset_dir,
         segmentation_transform_factory(image_height,image_height),
     )
     
@@ -226,6 +257,11 @@ def main() -> None:
             Path(args.ethz_input_dir),
             Path(args.prediction_output_dir),
             args.image_height,
+            args.epfl_dataset_dir,
+            args.deepglobe_dataset_dir,
+            args.chesa_dataset_dir,
+            args.mass_dataset_dir,
+            args.create_autoencoder_dataset,
         )
     else:
         train(
@@ -235,6 +271,7 @@ def main() -> None:
             args.epfl_dataset_dir,
             args.deepglobe_dataset_dir,
             args.chesa_dataset_dir,
+            args.mass_dataset_dir,
             args.lr,
             args.epochs,
             args.batch_size,
