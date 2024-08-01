@@ -202,9 +202,6 @@ def train(  # noqa: PLR0913
         )
         callbacks.append(early_stop_callback)
 
-    from road_segmentation.utils.prediction_callback import PredictionCallback
-    callbacks.append(PredictionCallback())
-
     trainer = pl.Trainer(
         accelerator=str(device),
         max_epochs=epochs,
