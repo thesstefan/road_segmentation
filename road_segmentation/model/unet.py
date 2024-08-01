@@ -20,19 +20,30 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+
 from math import sqrt
 
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch.utils.data import DataLoader
 from road_segmentation.model.impl.swish import CustomSwish
 from road_segmentation.model.impl.ws_conv import WNConv2d
 import lightning.pytorch as pl
 from torchvision.transforms.functional import resize
 from torchvision.transforms import InterpolationMode
+from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
 
-def ae_transform_factory(input_height: int, output_height):
-    def transform(image, labels=None):
+def ae_transform_factory(
+    input_height: int,
+    output_height: int,
+) -> callable:
+
+    def transform(
+        image: torch.Tensor,
+        labels: torch.Tensor | None = None,
+        ) -> tuple[torch.Tensor, torch.Tensor | None]:
+
         image = image.view(1, *image.shape).float()
         image_rs = resize(
             image,
@@ -40,7 +51,7 @@ def ae_transform_factory(input_height: int, output_height):
             interpolation=InterpolationMode.NEAREST,
         )
 
-        if not labels is None:
+        if labels is not None:
             labels = labels.view(1, *labels.shape)
             labels_rs = resize(
                 labels,
@@ -48,13 +59,21 @@ def ae_transform_factory(input_height: int, output_height):
                 interpolation=InterpolationMode.NEAREST,
             )
             return image_rs, labels_rs
-        else:
-            return image_rs, None
+
+        return image_rs, None
 
     return transform
 
-def segmentation_transform_factory(input_height: int, output_height):
-    def transform(image, labels=None):
+def segmentation_transform_factory(
+    input_height: int,
+    output_height: int,
+) -> callable:
+
+    def transform(
+        image: torch.Tensor,
+        labels: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+
         image = image.view(1, *image.shape).float()
         image_rs = resize(
             image,
@@ -64,7 +83,7 @@ def segmentation_transform_factory(input_height: int, output_height):
         image_rs = image_rs.squeeze()
         image_rs = image_rs.float()
 
-        if not labels is None:
+        if labels is not None:
             labels = labels.view(1, *labels.shape)
             labels_rs = resize(
                 labels,
@@ -73,16 +92,15 @@ def segmentation_transform_factory(input_height: int, output_height):
             )
             labels_rs = labels_rs.float()
             return image_rs, labels_rs
-        else:
-            return image_rs, None
+
+        return image_rs, None
 
     return transform
 
 def get_groups(channels: int) -> int:
-    """
-    :param channels:
+    """:param channels:
     :return: return a suitable parameter for number of groups in GroupNormalisation'.
-    """
+    """  # noqa: D205
     divisors = []
     for i in range(1, int(sqrt(channels)) + 1):
         if channels % i == 0:
@@ -108,13 +126,13 @@ class UNet(pl.LightningModule):
             metrics_interval: int = 20,
             dataloaders = None,
             ):
-        """
-        A modified U-Net implementation [1].
+        """A modified U-Net implementation [1].
 
         [1] U-Net: Convolutional Networks for Biomedical Image Segmentation
             Ronneberger et al., 2015 https://arxiv.org/abs/1505.04597
 
         Args:
+        ----
             in_channels (int): number of input channels
             n_classes (int): number of output channels
             depth (int): depth of the network
@@ -125,11 +143,13 @@ class UNet(pl.LightningModule):
                         'batch' will use BatchNormalization.
                         'group' will use GroupNormalization.
             up_mode (str): one of 'upconv' or 'upsample'.
-                           'upconv' will use transposed convolutions for learned upsampling.
+                           'upconv' will use transposed convolutions for learned 
+                           upsampling.
                            'upsample' will use bilinear upsampling.
-        """
-        super(UNet, self).__init__()
-        assert up_mode in ('upconv', 'upsample')
+
+        """  # noqa: D401
+        super().__init__()
+        assert up_mode in ("upconv", "upsample")
         self.lr = lr
         self.padding = padding
         self.depth = depth
@@ -171,7 +191,13 @@ class UNet(pl.LightningModule):
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
             self.up_path.append(
-                UNetUpBlock(prev_channels, 2 ** (wf + i), up_mode, padding, norm=norm)
+                UNetUpBlock(
+                    prev_channels,
+                    2 ** (wf + i),
+                    up_mode,
+                    padding,
+                    norm=norm,
+                ),
             )
             prev_channels = 2 ** (wf + i)
 
@@ -180,7 +206,10 @@ class UNet(pl.LightningModule):
             nn.Sigmoid(),
         )
 
-    def forward_down(self, x):
+    def forward_down(
+        self,
+        x: torch.Tensor,
+    ) -> tuple[torch.Tensor, list[torch.Tensor]]:
 
         blocks = []
         for i, down in enumerate(self.down_path):
@@ -190,24 +219,36 @@ class UNet(pl.LightningModule):
                 x = F.avg_pool2d(x, 2)
         return x, blocks
 
-    def forward_up_without_last(self, x, blocks):
+    def forward_up_without_last(
+        self,
+        x: torch.Tensor,
+        blocks: list[torch.Tensor],
+    ) -> torch.Tensor:
         for i, up in enumerate(self.up_path):
             skip = blocks[-i - 2]
             x = up(x, skip)
         return x
 
-    def forward_without_last(self, x):
+    def forward_without_last(
+        self,
+        x: torch.Tensor,
+    ) -> torch.Tensor:
         x, blocks = self.forward_down(x)
-        x = self.forward_up_without_last(x, blocks)
-        return x
+        return self.forward_up_without_last(x, blocks)
 
-    def forward(self, x):
+    def forward(
+        self,
+        x: torch.Tensor,
+    ) -> torch.Tensor:
         x = self.get_features(x)
         return self.last(x)
 
-    def get_features(self, x):
+    def get_features(
+        self,
+        x: torch.Tensor,
+        ) -> torch.Tensor:
         return self.forward_without_last(x)
-    
+
     def _compute_loss_and_update_metrics(
         self,
         batch: dict[str, torch.Tensor],
@@ -216,9 +257,9 @@ class UNet(pl.LightningModule):
         images, labels = batch["image"], batch["labels"]
 
         probs = self.forward(images)
-        loss = F.binary_cross_entropy(probs, labels) 
+        loss = F.binary_cross_entropy(probs, labels)
 
-        predicted = (probs >= 0.5).float()
+        predicted = (probs >= 0.5).float()  # noqa: PLR2004
 
         if self.metrics:
             self.metrics[phase].update(predicted, labels)
@@ -242,7 +283,7 @@ class UNet(pl.LightningModule):
             self.log_dict(metric_results, batch_size=self.batch_size)  # type: ignore[reportUnkonwnMemberType]
 
         return loss
-    
+
     def training_step(  # type: ignore[reportIncompatibleMethodOverride]
         self,
         batch: dict[str, torch.Tensor],
@@ -272,47 +313,26 @@ class UNet(pl.LightningModule):
         probs = self.forward(images)
 
         return (probs >= 0.5).float()
-    
+
     def on_train_start(self) -> None:
         if self.logger:
             self.logger.log_hyperparams(self.hparams)
-    def train_dataloader(self):
+    def train_dataloader(self) -> DataLoader[SegmentationItem] | None:
         return self.dataloaders.get("train")
 
-    def val_dataloader(self):
+    def val_dataloader(self) -> DataLoader[SegmentationItem] | None:
         return self.dataloaders.get("val")
 
-    def test_dataloader(self):
+    def test_dataloader(self) -> DataLoader[SegmentationItem] | None:
         return self.dataloaders.get("test")
-    # def step(self, batch, batch_idx):
-    #     x = batch['image']
-    #     y = batch['labels']
-    #     y_hat = self.forward(x)
-    #     loss = F.binary_cross_entropy(y_hat, y)
-    #     return loss, {"loss": loss}
 
-    # def training_step(self, batch, batch_idx):
-    #     loss, logs = self.step(batch, batch_idx)
-    #     self.log_dict({f"train_{k}": v for k, v in logs.items()}, on_step=True, on_epoch=False)
-    #     return loss
-    
-    # def validation_step(self, batch, batch_idx):
-    #     loss, logs = self.step(batch, batch_idx)
-    #     self.log_dict({f"val_{k}": v for k, v in logs.items()})
-    #     return loss
-    
-    # def predict_step(self, batch, batch_idx):
-    #     x = batch["image"]
-    #     output = self.forward(x)
-    #     return (output >= 0.5).float()
-    
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> DataLoader[SegmentationItem] | None:
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
 
 class UNetConvBlock(nn.Module):
     def __init__(self, in_size, out_size, padding, norm="group", kernel_size=3):
-        super(UNetConvBlock, self).__init__()
+        super().__init__()
         block = []
         if padding:
             block.append(nn.ReflectionPad2d(1))
@@ -338,34 +358,40 @@ class UNetConvBlock(nn.Module):
 
         self.block = nn.Sequential(*block)
 
-    def forward(self, x):
-        out = self.block(x)
-        return out
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.block(x)
 
 
 class UNetUpBlock(nn.Module):
     def __init__(self, in_size, out_size, up_mode, padding, norm="group"):
-        super(UNetUpBlock, self).__init__()
-        if up_mode == 'upconv':
+        super().__init__()
+        if up_mode == "upconv":
             self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
-        elif up_mode == 'upsample':
+        elif up_mode == "upsample":
             self.up = nn.Sequential(
-                nn.Upsample(mode='bilinear', scale_factor=2),
+                nn.Upsample(mode="bilinear", scale_factor=2),
                 nn.Conv2d(in_size, out_size, kernel_size=1),
             )
 
         self.conv_block = UNetConvBlock(in_size, out_size, padding, norm=norm)
 
-    def center_crop(self, layer, target_size):
+    def center_crop(
+        self,
+        layer: torch.Tensor,
+        target_size: tuple[int, int],
+    ) -> torch.Tensor:
         _, _, layer_height, layer_width = layer.size()
         diff_y = (layer_height - target_size[0]) // 2
         diff_x = (layer_width - target_size[1]) // 2
         return layer[:, :, diff_y: (diff_y + target_size[0]), diff_x: (diff_x + target_size[1])]
 
-    def forward(self, x, bridge):
+    def forward(
+        self,
+        x: torch.Tensor,
+        bridge: torch.Tensor,
+    ) -> torch.Tensor:
         up = self.up(x)
         crop1 = self.center_crop(bridge, up.shape[2:])
         out = torch.cat([up, crop1], 1)
-        out = self.conv_block(out)
+        return self.conv_block(out)
 
-        return out

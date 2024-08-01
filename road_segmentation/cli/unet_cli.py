@@ -21,7 +21,7 @@ from torchmetrics.collections import MetricCollection
 from road_segmentation.dataset.ethz_cil_dataset import ETHZDataset
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
 from road_segmentation.dataset.merged_datasets import get_datasets
-from road_segmentation.model.unet_denoising import UNet, segmentation_transform_factory
+from road_segmentation.model.unet import UNet, segmentation_transform_factory
 from road_segmentation.utils.prediction_writer import OnBatchImageOutputWriter
 
 import warnings
