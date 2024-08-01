@@ -81,6 +81,7 @@ def predict(
     prediction_output_dir: Path,
     image_height: int,
 ) -> None:
+
     model = UNet.load_from_checkpoint(  # type: ignore[reportUnkonwnMemberType]
         checkpoint_path=model_ckpt_path,
     ).to(device)
@@ -91,7 +92,7 @@ def predict(
     )
     dataloader = DataLoader(
         predict_dataset,
-        batch_size=model.batch_size,
+        batch_size=2,
         shuffle=False,
     )
     predictor = pl.Trainer(
@@ -224,7 +225,7 @@ def main() -> None:
             Path(args.model_ckpt_path),
             Path(args.ethz_input_dir),
             Path(args.prediction_output_dir),
-            args.image_hiehgt,
+            args.image_height,
         )
     else:
         train(
