@@ -109,7 +109,7 @@ class SoftDiceLoss(nn.Module):
                 dc = dc[:, 1:]
         dc = dc.mean()
 
-        return -dc
+        return 1-dc
 
 
 class MemoryEfficientSoftDiceLoss(nn.Module):
@@ -173,7 +173,7 @@ class MemoryEfficientSoftDiceLoss(nn.Module):
         dc = (2 * intersect + self.smooth) / (torch.clip(sum_gt + sum_pred + self.smooth, 1e-8))
 
         dc = dc.mean()
-        return -dc
+        return 1-dc
     
 def get_tp_fp_fn_tn(net_output, gt, axes=None, mask=None, square=False):
     """
@@ -213,13 +213,6 @@ def get_tp_fp_fn_tn(net_output, gt, axes=None, mask=None, square=False):
         fp *= mask_here
         fn *= mask_here
         tn *= mask_here
-        # benchmark whether tiling the mask would be faster (torch.tile). It probably is for large batch sizes
-        # OK it barely makes a difference but the implementation above is a tiny bit faster + uses less vram
-        # (using nnUNetv2_train 998 3d_fullres 0)
-        # tp = torch.stack(tuple(x_i * mask[:, 0] for x_i in torch.unbind(tp, dim=1)), dim=1)
-        # fp = torch.stack(tuple(x_i * mask[:, 0] for x_i in torch.unbind(fp, dim=1)), dim=1)
-        # fn = torch.stack(tuple(x_i * mask[:, 0] for x_i in torch.unbind(fn, dim=1)), dim=1)
-        # tn = torch.stack(tuple(x_i * mask[:, 0] for x_i in torch.unbind(tn, dim=1)), dim=1)
 
     if square:
         tp = tp ** 2

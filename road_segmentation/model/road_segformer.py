@@ -9,6 +9,7 @@ from transformers import (  # type: ignore[import]
 )
 
 from road_segmentation.dataset.segmentation_datapoint import SegmentationItem
+from segmentation_models_pytorch import losses
 
 ID2LABEL = {0: "background", 1: "road"}
 LABEL2ID = {v: k for k, v in ID2LABEL.items()}
@@ -54,6 +55,16 @@ class RoadSegformer(pl.LightningModule):
 
     train_dataset_name: str
 
+    tversky_loss_factor: float = 0.0
+    tversky_alpha: float = 0.5
+    tversky_beta: float = 0.5
+
+    focal_loss_factor: float = 0.0
+    focal_alpha: float | None = None
+    focal_gamma: float = 2.0
+
+    bce_loss_factor: float = 1.0
+
     def __init__(  # noqa: PLR0913
         self,
         segformer_ckpt: str,
@@ -62,7 +73,14 @@ class RoadSegformer(pl.LightningModule):
         dataloaders: dict[str, DataLoader[SegmentationItem]] | None = None,
         metrics: MetricCollection | None = None,
         metrics_interval: int = 20,
-        train_dataset_name: str = "Unknown",
+        train_dataset_name: str = "unknown",
+        tversky_loss_factor: float = 0.0,
+        tversky_alpha: float = 0.5,
+        tversky_beta: float = 0.5,
+        focal_loss_factor: float = 0.0,
+        focal_alpha: float | None = None,
+        focal_gamma: float = 2.0,
+        bce_loss_factor: float = 1.0,
     ) -> None:
         super().__init__()
 
@@ -92,7 +110,24 @@ class RoadSegformer(pl.LightningModule):
             "lr",
             "train_dataset_name",
             "segformer_ckpt",
+            "tversky_loss_factor",
+            "tversky_alpha",
+            "tversky_beta",
+            "focal_loss_factor",
+            "focal_alpha",
+            "focal_gamma",
+            "bce_loss_factor",
         )
+
+        self.tversky_loss_factor = tversky_loss_factor
+        self.tversky_alpha = tversky_alpha
+        self.tversky_beta = tversky_beta
+
+        self.focal_loss_factor = focal_loss_factor
+        self.focal_alpha = focal_alpha
+        self.focal_gamma = focal_gamma
+
+        self.bce_loss_factor = bce_loss_factor
 
     def _compute_loss_and_update_metrics(
         self,
@@ -101,18 +136,40 @@ class RoadSegformer(pl.LightningModule):
     ) -> torch.Tensor:
         images, labels = batch["image"], batch["labels"]
 
-        (loss, logits) = self.segformer(
+        (bce_loss, logits) = self.segformer(
             pixel_values=images,
             labels=labels,
             return_dict=False,
         )
 
-        predicted = upsample_logits(logits, labels.shape[-2:])
+        upsampled_logits: torch.Tensor = nn.functional.interpolate(  # type: ignore[reportUnknownMemberType]
+            logits,
+            size=labels.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        ).float()
 
+        tversky_loss = losses.TverskyLoss(
+            mode="multiclass",
+            alpha=self.tversky_alpha,
+            beta=self.tversky_beta,
+        )(upsampled_logits, labels)
+
+        focal_loss = losses.FocalLoss(
+            mode="multiclass",
+            alpha=self.focal_alpha,
+            gamma=self.focal_gamma,
+        )(upsampled_logits, labels)
+
+        predicted = upsampled_logits.argmax(dim=1)
         if self.metrics:
             self.metrics[phase].update(predicted, labels)
 
-        return loss  # type: ignore[no-any-return]
+        return (
+            self.bce_loss_factor * bce_loss
+            + self.tversky_loss_factor * tversky_loss
+            + self.focal_loss_factor * focal_loss
+        )  # type: ignore[no-any-return]
 
     def _step(
         self,
@@ -161,7 +218,14 @@ class RoadSegformer(pl.LightningModule):
         images = batch["image"]
         logits = self.segformer(pixel_values=images, return_dict=False)[0]
 
-        return upsample_logits(logits, images.shape[-2:])
+        upsampled_logits: torch.Tensor = nn.functional.interpolate(  # type: ignore[reportUnknownMemberType]
+            logits,
+            size=images.shape[-2:],
+            mode="bilinear",
+            align_corners=False,
+        ).float()
+
+        return upsampled_logits.argmax(dim=1)
 
     def on_train_start(self) -> None:
         if self.logger:
