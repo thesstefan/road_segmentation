@@ -27,7 +27,9 @@ where = ["."]
 road_segmentation = "road_segmentation.cli.entrypoint:main"
 road_segformer = "road_segmentation.cli.segformer_cli:main"
 unet_simple = "road_segmentation.cli.unet_simple_cli:main"
-
+umamba = "road_segmentation.cli.umamba_cli:main"
+unet = "road_segmentation.cli.unet_cli:main"
+unet_ae = "road_segmentation.cli.auto_encoder_cli:main"
 
 [tool.ruff]
 line-length = 80
