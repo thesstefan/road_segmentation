@@ -1,6 +1,12 @@
-# The Cartographers - Road Segmentation
+<div align='center'>
+  <h2 align="center"> Leveraging Autoencoders for Improved Noise Reduction and Connectivity in
+Road Segmentation by Augmenting Existing Models</h2>
+  <h3 align="center"> 🛣️🚙🚗🚕🛣️ <h3 align="center">Andreas Frey, Stefan Stefanache, David Streuli, Jefrrey Zweidler</h3>  
+</h3>    
+  <img title="Teaser" alt="Teaser" src="assets/teaser.png">
+</div>
 
-This project provides a solution for road segmentation using various models such as U-Net, U-Mamba, and RoadSegFormer.
+This project provides a solution for road segmentation using various models such as U-Net, U-Mamba, and SegFormer.
 
 ## Prerequisites
 
